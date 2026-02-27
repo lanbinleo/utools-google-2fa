@@ -350,6 +350,7 @@ html, body {
 /* 验证码列表滚动条：与页面背景融合，不影响弹窗滚动条 */
 .code-grid,
 .manage-list {
+  background: var(--bg);
   scrollbar-width: thin;
   scrollbar-color: var(--border) var(--bg);
 }
@@ -357,12 +358,29 @@ html, body {
 .code-grid::-webkit-scrollbar,
 .manage-list::-webkit-scrollbar {
   width: 10px;
-  background: var(--bg);
+  background-color: var(--bg);
 }
 
 .code-grid::-webkit-scrollbar-track,
 .manage-list::-webkit-scrollbar-track {
-  background: var(--bg);
+  background-color: var(--bg);
+}
+
+.code-grid::-webkit-scrollbar-track-piece,
+.manage-list::-webkit-scrollbar-track-piece {
+  background-color: var(--bg);
+}
+
+.code-grid::-webkit-scrollbar-corner,
+.manage-list::-webkit-scrollbar-corner {
+  background-color: var(--bg);
+}
+
+.code-grid::-webkit-scrollbar-button,
+.manage-list::-webkit-scrollbar-button {
+  width: 0;
+  height: 0;
+  background-color: var(--bg);
 }
 
 .code-grid::-webkit-scrollbar-thumb,
