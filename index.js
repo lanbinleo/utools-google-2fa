@@ -269,6 +269,7 @@
   let currentView = 'home';
   let editingId = null;
   let refreshInterval = null;
+  let toastTimer = null;
   let addDialogInitialState = null;
   let addDialogEscapeRequested = false;
 
@@ -610,7 +611,13 @@
     toast.textContent = message;
     toast.className = 'toast ' + type;
     toast.classList.add('show');
-    setTimeout(() => toast.classList.remove('show'), 2500);
+    if (toastTimer) {
+      clearTimeout(toastTimer);
+    }
+    toastTimer = setTimeout(() => {
+      toast.classList.remove('show');
+      toastTimer = null;
+    }, 2500);
   }
 
   // 复制到剪贴板
