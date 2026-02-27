@@ -292,30 +292,10 @@ html, body {
   min-height: 0;
   overflow-y: auto;
   padding-right: 2px;
-}
-
-.migration-hero {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  padding: 16px 18px;
-  margin-bottom: 12px;
-}
-
-.migration-hero h2 {
-  margin: 0;
-  font-size: 18px;
-}
-
-.migration-hero p {
-  margin: 6px 0 0;
-  font-size: 13px;
-  color: var(--text-secondary);
+  background: var(--bg);
 }
 
 .migration-meta {
-  margin-top: 10px;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
@@ -341,16 +321,29 @@ html, body {
 .migration-card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 14px;
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   margin-bottom: 12px;
 }
 
-.migration-flow-card {
+.migration-workspace {
   min-height: 0;
+}
+
+.migration-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.migration-header-main h2 {
+  margin: 0;
+  font-size: 18px;
 }
 
 .migration-stepper {
@@ -392,6 +385,46 @@ html, body {
 }
 
 .migration-step.active {
+  display: flex;
+}
+
+.migration-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-hover);
+  width: fit-content;
+}
+
+.migration-tab {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  border-radius: 999px;
+  padding: 7px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.migration-tab:hover {
+  color: var(--text);
+}
+
+.migration-tab.active {
+  background: var(--accent);
+  color: white;
+}
+
+.migration-pane {
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.migration-pane.active {
   display: flex;
 }
 
@@ -520,6 +553,114 @@ html, body {
 
 .migration-field {
   gap: 6px;
+}
+
+.migration-export-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.migration-export-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.migration-icon-btn {
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.migration-icon-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.migration-icon-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.migration-export-output {
+  min-height: 120px;
+}
+
+.migration-qr-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.migration-qr-wrap {
+  width: 228px;
+  height: 228px;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-hover);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.migration-qr-wrap img {
+  width: 208px;
+  height: 208px;
+  object-fit: contain;
+  display: none;
+}
+
+.migration-qr-wrap.has-qr img {
+  display: block;
+}
+
+.migration-qr-wrap::after {
+  content: "暂无二维码";
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.migration-qr-wrap.has-qr::after {
+  content: "";
+}
+
+.migration-layout,
+.migration-preview-list,
+.migration-export-output {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) var(--bg);
+}
+
+.migration-layout::-webkit-scrollbar,
+.migration-preview-list::-webkit-scrollbar,
+.migration-export-output::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+  background-color: var(--bg);
+}
+
+.migration-layout::-webkit-scrollbar-track,
+.migration-preview-list::-webkit-scrollbar-track,
+.migration-export-output::-webkit-scrollbar-track {
+  background-color: var(--bg);
+}
+
+.migration-layout::-webkit-scrollbar-thumb,
+.migration-preview-list::-webkit-scrollbar-thumb,
+.migration-export-output::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 999px;
+  border: 2px solid var(--bg);
 }
 
 /* 设置页面 */
@@ -1593,6 +1734,20 @@ html, body {
 
   .migration-stepper {
     flex-wrap: nowrap;
+  }
+
+  .migration-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .migration-export-head {
+    flex-direction: column;
+  }
+
+  .migration-qr-wrap {
+    width: 100%;
+    max-width: 228px;
   }
 
   .toolbar {

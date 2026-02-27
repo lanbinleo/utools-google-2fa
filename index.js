@@ -907,7 +907,10 @@
   let migrationPreviewItems = [];
   let migrationInvalidCount = 0;
   let migrationFlowStep = 1;
+  let migrationActiveTab = 'import';
   let migrationLastImportResult = null;
+  let migrationExportText = '';
+  let migrationExportQrDataUrl = '';
   let appMeta = {
     version: '-',
     author: '-',
@@ -1278,6 +1281,25 @@
     });
   }
 
+  function setMigrationTab(tab) {
+    const normalized = tab === 'export' ? 'export' : 'import';
+    migrationActiveTab = normalized;
+
+    $$('#migrationView .migration-tab').forEach(node => {
+      const active = node.dataset.migrationTab === normalized;
+      node.classList.toggle('active', active);
+      node.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
+
+    $$('#migrationView .migration-pane').forEach(node => {
+      node.classList.toggle('active', node.dataset.migrationPane === normalized);
+    });
+
+    if (normalized === 'export') {
+      renderMigrationExport();
+    }
+  }
+
   function resetMigrationFlow(options = {}) {
     const keepInput = !!options.keepInput;
     if (!keepInput) {
@@ -1288,6 +1310,130 @@
     setMigrationPreview([], 0);
     setMigrationStep(1);
     renderMigrationLanding();
+  }
+
+  function toDataUrlBlob(dataUrl) {
+    if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) return null;
+    const comma = dataUrl.indexOf(',');
+    if (comma < 0) return null;
+    const meta = dataUrl.slice(5, comma);
+    const body = dataUrl.slice(comma + 1);
+    const mime = meta.split(';')[0] || 'image/png';
+    const bytes = Uint8Array.from(atob(body), c => c.charCodeAt(0));
+    return new Blob([bytes], { type: mime });
+  }
+
+  async function writeClipboardTextSimple(text) {
+    if (window.utoolsBridge && window.utoolsBridge.setClipboardText) {
+      window.utoolsBridge.setClipboardText(text);
+      return true;
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+    return false;
+  }
+
+  function createMigrationQrDataUrl(text) {
+    if (typeof text !== 'string' || !text.trim()) return '';
+    if (typeof window.qrcode !== 'function') return '';
+    try {
+      const qr = window.qrcode(0, 'M');
+      qr.addData(text, 'Byte');
+      qr.make();
+      return qr.createDataURL(8, 2);
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function renderMigrationExport() {
+    const output = $('#migrationExportOutput');
+    const qrImg = $('#migrationExportQrImage');
+    const qrWrap = $('#migrationExportQrWrap');
+    if (!output || !qrImg || !qrWrap) return;
+
+    const migrationText = buildMigrationUrlFromEntries(entries);
+    migrationExportText = migrationText || '';
+    output.value = migrationExportText;
+
+    if (!migrationExportText) {
+      migrationExportQrDataUrl = '';
+      qrImg.removeAttribute('src');
+      qrWrap.classList.remove('has-qr');
+      return;
+    }
+
+    const qrDataUrl = createMigrationQrDataUrl(migrationExportText);
+    migrationExportQrDataUrl = qrDataUrl || '';
+    if (migrationExportQrDataUrl) {
+      qrImg.src = migrationExportQrDataUrl;
+      qrWrap.classList.add('has-qr');
+    } else {
+      qrImg.removeAttribute('src');
+      qrWrap.classList.remove('has-qr');
+    }
+  }
+
+  async function copyMigrationExportText() {
+    if (!migrationExportText) {
+      renderMigrationExport();
+    }
+    if (!migrationExportText) {
+      showToast('暂无可复制的迁移字符串', 'error');
+      return;
+    }
+    try {
+      await writeClipboardTextSimple(migrationExportText);
+      showToast('迁移字符串已复制', 'success');
+    } catch (_) {
+      showToast('复制失败', 'error');
+    }
+  }
+
+  async function copyMigrationExportQrImage() {
+    if (!migrationExportQrDataUrl) {
+      renderMigrationExport();
+    }
+    if (!migrationExportQrDataUrl) {
+      showToast('暂无可复制的二维码', 'error');
+      return;
+    }
+
+    const blob = toDataUrlBlob(migrationExportQrDataUrl);
+    if (!blob) {
+      showToast('二维码数据异常', 'error');
+      return;
+    }
+
+    try {
+      if (navigator.clipboard && navigator.clipboard.write && typeof ClipboardItem !== 'undefined') {
+        await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+        showToast('二维码图片已复制', 'success');
+      } else {
+        showToast('当前环境不支持复制图片，请使用保存按钮', 'error');
+      }
+    } catch (_) {
+      showToast('复制二维码失败，请尝试保存图片', 'error');
+    }
+  }
+
+  function saveMigrationExportQrImage() {
+    if (!migrationExportQrDataUrl) {
+      renderMigrationExport();
+    }
+    if (!migrationExportQrDataUrl) {
+      showToast('暂无可保存的二维码', 'error');
+      return;
+    }
+    const anchor = document.createElement('a');
+    anchor.href = migrationExportQrDataUrl;
+    anchor.download = `migration-qr-${getExportTimestamp()}.png`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    showToast('二维码已保存', 'success');
   }
 
   function renderMigrationLanding() {
@@ -1320,6 +1466,7 @@
 
   function parseMigrationInputToPreview(text, options = {}) {
     const silent = !!options.silent;
+    setMigrationTab('import');
     migrationLastImportResult = null;
     renderMigrationLanding();
     const parsed = parseMigrationInputText(text);
@@ -1339,6 +1486,7 @@
   }
 
   async function parseMigrationImageToPreview(imageData, source = 'migration-image') {
+    setMigrationTab('import');
     migrationLastImportResult = null;
     renderMigrationLanding();
     const parsedItems = await parseImportCandidatesFromImageData(imageData, source);
@@ -1390,6 +1538,8 @@
     renderMigrationPreview();
     renderMigrationLanding();
     setMigrationStep(migrationFlowStep);
+    renderMigrationExport();
+    setMigrationTab(migrationActiveTab);
   }
 
   function renderSettingsView() {
@@ -2811,6 +2961,7 @@
     $('#importMigrationBtn')?.addEventListener('click', async () => {
       closeImportMenu();
       switchView('migration');
+      setMigrationTab('import');
       const text = await readClipboardTextRaw('import-migration-btn');
       if (!text) {
         showToast('请先复制迁移链接或 migration data', 'error');
@@ -2834,6 +2985,13 @@
     });
 
     // 迁移页面
+    $('#migrationView')?.addEventListener('click', (e) => {
+      const tabBtn = e.target.closest('.migration-tab');
+      if (!tabBtn) return;
+      const tab = tabBtn.dataset.migrationTab || 'import';
+      setMigrationTab(tab);
+    });
+
     $('#migrationParseBtn')?.addEventListener('click', () => {
       const text = $('#migrationInput')?.value || '';
       parseMigrationInputToPreview(text);
@@ -2859,6 +3017,23 @@
 
     $('#migrationGoHomeBtn')?.addEventListener('click', () => {
       switchView('home');
+    });
+
+    $('#migrationExportRefreshBtn')?.addEventListener('click', () => {
+      renderMigrationExport();
+      showToast('导出内容已刷新', 'success');
+    });
+
+    $('#migrationExportCopyTextBtn')?.addEventListener('click', async () => {
+      await copyMigrationExportText();
+    });
+
+    $('#migrationExportCopyQrBtn')?.addEventListener('click', async () => {
+      await copyMigrationExportQrImage();
+    });
+
+    $('#migrationExportSaveQrBtn')?.addEventListener('click', () => {
+      saveMigrationExportQrImage();
     });
 
     $('#migrationPasteQuickBtn')?.addEventListener('click', async () => {
@@ -2900,6 +3075,7 @@
     const handleMigrationPasteImage = async (e) => {
       if (e.defaultPrevented) return;
       if (currentView !== 'migration') return;
+      if (migrationActiveTab !== 'import') return;
       const items = Array.from(e.clipboardData?.items || []);
       const imageItem = items.find(item => item.kind === 'file' && item.type.startsWith('image/'));
       if (!imageItem) return;

@@ -7,6 +7,28 @@ Notes:
 1. `alpha-*` sections are retrospective and grouped from commit history (no historical tags).
 2. `1.0.0` release point is fixed at `2026-02-27 10:50:15 UTC`.
 
+## 1.1.2
+
+Date: `2026-02-27`
+
+### Added
+
+1. Added migration workspace tabs: `导入` / `导出`.
+2. Added migration export panel with direct migration text output.
+3. Added export actions with icon buttons: refresh payload, copy text, copy QR image, save QR image.
+4. Added local QR generation runtime for migration export (`vendor/qrcode.min.js`).
+
+### Changed
+
+1. Refactored migration page layout into a single unified card: title + tab panes.
+2. Removed the previous separate top title/hero card from migration page.
+3. Kept import flow step-by-step while nesting it under the `导入` tab.
+
+### Fixed
+
+1. Unified migration page scrollbar colors with app theme background to avoid visual mismatch.
+2. Limited migration image-paste interception to `导入` tab only.
+
 ## 1.1.1
 
 Date: `2026-02-27`

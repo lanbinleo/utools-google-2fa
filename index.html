@@ -73,66 +73,117 @@
       <!-- 迁移视图 -->
       <div id="migrationView" class="view">
         <div class="migration-layout">
-          <section class="migration-hero">
-            <h2>迁移与导入</h2>
-            <p>按步骤完成迁移：输入来源 -> 预览校验 -> 导入完成。</p>
-            <div class="migration-meta">
-              <span class="migration-badge" id="migrationCountBadge">当前条目 0</span>
-              <span class="migration-badge muted">仅本地处理，不上传网络</span>
-            </div>
-          </section>
-
-          <section class="migration-card migration-flow-card">
-            <div class="migration-stepper">
-              <div class="migration-step-indicator active" data-step-marker="1">1. 输入来源</div>
-              <div class="migration-step-indicator" data-step-marker="2">2. 预览导入</div>
-              <div class="migration-step-indicator" data-step-marker="3">3. 完成</div>
-            </div>
-
-            <div class="migration-step active" data-step="1">
-              <h3>Step 1: 输入迁移数据</h3>
-              <p class="migration-card-desc">支持 otpauth://、otpauth-migration://offline?data=... 以及直接粘贴 migration data payload。</p>
-              <div class="migration-actions">
-                <button type="button" class="btn-muted migration-btn" id="migrationPasteQuickBtn">从剪贴板粘贴文本</button>
-                <button type="button" class="btn-muted migration-btn" id="migrationQrFileBtn">上传二维码图片</button>
-                <input type="file" id="migrationQrFileInput" accept="image/*" hidden>
+          <section class="migration-card migration-workspace">
+            <div class="migration-header">
+              <div class="migration-header-main">
+                <h2>迁移工具</h2>
+                <p class="migration-card-desc">导入或导出 otpauth-migration 数据。</p>
               </div>
-              <div class="migration-paste-box" id="migrationPasteBox" tabindex="0">
-                <p>支持 <kbd>Ctrl</kbd> + <kbd>V</kbd> 粘贴二维码图片</p>
-                <span>识别成功后会自动进入下一步预览。</span>
-              </div>
-              <textarea id="migrationInput" class="migration-textarea" rows="6" placeholder="otpauth://totp/Google:alice@example.com?...&#10;otpauth-migration://offline?data=..."></textarea>
-              <div class="migration-step-actions">
-                <button type="button" class="btn-muted migration-btn" id="migrationClearBtn">清空</button>
-                <button type="button" class="btn-primary migration-btn" id="migrationParseBtn">解析并继续</button>
+              <div class="migration-meta">
+                <span class="migration-badge" id="migrationCountBadge">当前条目 0</span>
+                <span class="migration-badge muted">仅本地处理，不上传网络</span>
               </div>
             </div>
 
-            <div class="migration-step" data-step="2">
-              <h3>Step 2: 预览并导入</h3>
-              <p id="migrationPreviewSummary" class="migration-card-desc">暂无待导入条目。</p>
-              <div class="migration-preview-list" id="migrationPreviewList"></div>
-              <label class="form-label migration-field">
-                <span>检测到同名同发行方条目时</span>
-                <select id="migrationConflictSelect">
-                  <option value="skip">跳过已有条目（推荐）</option>
-                  <option value="replace">覆盖已有条目</option>
-                  <option value="duplicate">保留并创建副本</option>
-                </select>
-              </label>
-              <div class="migration-step-actions">
-                <button type="button" class="btn-muted migration-btn" id="migrationBackBtn">返回修改输入</button>
-                <button type="button" class="btn-primary migration-btn" id="migrationApplyBtn">确认导入</button>
+            <div class="migration-tabs" role="tablist" aria-label="迁移功能分页">
+              <button type="button" class="migration-tab active" data-migration-tab="import" aria-selected="true">导入</button>
+              <button type="button" class="migration-tab" data-migration-tab="export" aria-selected="false">导出</button>
+            </div>
+
+            <div class="migration-pane active" data-migration-pane="import">
+              <div class="migration-stepper">
+                <div class="migration-step-indicator active" data-step-marker="1">1. 输入来源</div>
+                <div class="migration-step-indicator" data-step-marker="2">2. 预览导入</div>
+                <div class="migration-step-indicator" data-step-marker="3">3. 完成</div>
+              </div>
+
+              <div class="migration-step active" data-step="1">
+                <h3>Step 1: 输入迁移数据</h3>
+                <p class="migration-card-desc">支持 otpauth://、otpauth-migration://offline?data=... 或直接粘贴 migration payload。</p>
+                <div class="migration-actions">
+                  <button type="button" class="btn-muted migration-btn" id="migrationPasteQuickBtn">从剪贴板粘贴文本</button>
+                  <button type="button" class="btn-muted migration-btn" id="migrationQrFileBtn">上传二维码图片</button>
+                  <input type="file" id="migrationQrFileInput" accept="image/*" hidden>
+                </div>
+                <div class="migration-paste-box" id="migrationPasteBox" tabindex="0">
+                  <p>支持 <kbd>Ctrl</kbd> + <kbd>V</kbd> 粘贴二维码图片</p>
+                  <span>识别成功后会自动进入下一步预览。</span>
+                </div>
+                <textarea id="migrationInput" class="migration-textarea" rows="6" placeholder="otpauth://totp/Google:alice@example.com?...&#10;otpauth-migration://offline?data=..."></textarea>
+                <div class="migration-step-actions">
+                  <button type="button" class="btn-muted migration-btn" id="migrationClearBtn">清空</button>
+                  <button type="button" class="btn-primary migration-btn" id="migrationParseBtn">解析并继续</button>
+                </div>
+              </div>
+
+              <div class="migration-step" data-step="2">
+                <h3>Step 2: 预览并导入</h3>
+                <p id="migrationPreviewSummary" class="migration-card-desc">暂无待导入条目。</p>
+                <div class="migration-preview-list" id="migrationPreviewList"></div>
+                <label class="form-label migration-field">
+                  <span>检测到同名同发行方条目时</span>
+                  <select id="migrationConflictSelect">
+                    <option value="skip">跳过已有条目（推荐）</option>
+                    <option value="replace">覆盖已有条目</option>
+                    <option value="duplicate">保留并创建副本</option>
+                  </select>
+                </label>
+                <div class="migration-step-actions">
+                  <button type="button" class="btn-muted migration-btn" id="migrationBackBtn">返回修改输入</button>
+                  <button type="button" class="btn-primary migration-btn" id="migrationApplyBtn">确认导入</button>
+                </div>
+              </div>
+
+              <div class="migration-step" data-step="3">
+                <h3>Step 3: 导入完成</h3>
+                <p id="migrationLandingSummary" class="migration-card-desc">导入完成。</p>
+                <div class="migration-preview-list" id="migrationLandingDetails"></div>
+                <div class="migration-step-actions">
+                  <button type="button" class="btn-muted migration-btn" id="migrationRestartBtn">继续导入</button>
+                  <button type="button" class="btn-primary migration-btn" id="migrationGoHomeBtn">回到首页</button>
+                </div>
               </div>
             </div>
 
-            <div class="migration-step" data-step="3">
-              <h3>Step 3: 导入完成</h3>
-              <p id="migrationLandingSummary" class="migration-card-desc">导入完成。</p>
-              <div class="migration-preview-list" id="migrationLandingDetails"></div>
-              <div class="migration-step-actions">
-                <button type="button" class="btn-muted migration-btn" id="migrationRestartBtn">继续导入</button>
-                <button type="button" class="btn-primary migration-btn" id="migrationGoHomeBtn">回到首页</button>
+            <div class="migration-pane" data-migration-pane="export">
+              <div class="migration-export-head">
+                <div>
+                  <h3>导出为 otpauth-migration</h3>
+                  <p class="migration-card-desc">可复制迁移字符串，或生成二维码进行跨设备导入。</p>
+                </div>
+                <div class="migration-export-tools">
+                  <button type="button" class="migration-icon-btn" id="migrationExportRefreshBtn" title="刷新导出内容" aria-label="刷新导出内容">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 12a9 9 0 10-2.64 6.36"></path>
+                      <polyline points="21 3 21 9 15 9"></polyline>
+                    </svg>
+                  </button>
+                  <button type="button" class="migration-icon-btn" id="migrationExportCopyTextBtn" title="复制迁移字符串" aria-label="复制迁移字符串">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="9" y="9" width="13" height="13" rx="2"></rect>
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                    </svg>
+                  </button>
+                  <button type="button" class="migration-icon-btn" id="migrationExportCopyQrBtn" title="复制二维码图片" aria-label="复制二维码图片">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect>
+                      <rect x="3" y="14" width="7" height="7"></rect><path d="M14 14h3v3h-3zM20 14h1v1h-1zM18 18h3v3h-3z"></path>
+                    </svg>
+                  </button>
+                  <button type="button" class="migration-icon-btn" id="migrationExportSaveQrBtn" title="保存二维码图片" aria-label="保存二维码图片">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                      <polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <textarea id="migrationExportOutput" class="migration-textarea migration-export-output" rows="6" readonly placeholder="点击刷新按钮生成 migration 字符串"></textarea>
+              <div class="migration-qr-section">
+                <div class="migration-qr-wrap" id="migrationExportQrWrap">
+                  <img id="migrationExportQrImage" alt="migration 二维码">
+                </div>
+                <p class="migration-card-desc">二维码默认包含当前全部可导出条目。</p>
               </div>
             </div>
           </section>
@@ -357,6 +408,7 @@
   </div>
 
   <script src="vendor/jsQR.js"></script>
+  <script src="vendor/qrcode.min.js"></script>
   <script src="index.js"></script>
 </body>
 </html>
