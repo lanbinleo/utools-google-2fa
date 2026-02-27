@@ -18,13 +18,13 @@
         </nav>
       </div>
       <div class="header-right">
-        <button class="icon-btn" id="themeBtn" title="切换主题">
+        <button class="icon-btn" id="themeBtn" title="切换主题" aria-label="切换主题">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="5"/>
             <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
           </svg>
         </button>
-        <button class="icon-btn" id="addBtn" title="添加">
+        <button class="icon-btn" id="addBtn" title="添加" aria-label="添加验证码">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
           </svg>
@@ -66,11 +66,11 @@
     </main>
 
     <!-- 导入/添加弹窗 -->
-    <dialog id="addDialog" class="dialog">
+    <dialog id="addDialog" class="dialog" aria-labelledby="dialogTitle">
       <form class="dialog-content" id="addForm">
         <div class="dialog-header">
           <h3 id="dialogTitle">添加验证码</h3>
-          <button type="button" class="close-btn" id="closeDialog">
+          <button type="button" class="close-btn" id="closeDialog" aria-label="关闭添加弹窗">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
             </svg>
@@ -97,7 +97,7 @@
             <span>密钥</span>
             <div class="input-with-paste">
               <textarea id="secretInput" rows="3" placeholder="粘贴密钥或 otpauth:// 链接" required></textarea>
-              <button type="button" class="paste-btn" id="pasteBtn" title="从剪贴板粘贴">
+              <button type="button" class="paste-btn" id="pasteBtn" title="从剪贴板粘贴" aria-label="从剪贴板粘贴">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/>
                   <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
@@ -157,11 +157,11 @@
     </dialog>
 
     <!-- 导入菜单弹窗 -->
-    <dialog id="importMenuDialog" class="dialog">
+    <dialog id="importMenuDialog" class="dialog" aria-labelledby="importMenuTitle">
       <div class="dialog-content">
         <div class="dialog-header">
-          <h3>导入</h3>
-          <button type="button" class="close-btn" id="closeImportMenu">
+          <h3 id="importMenuTitle">导入</h3>
+          <button type="button" class="close-btn" id="closeImportMenu" aria-label="关闭导入弹窗">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
             </svg>
