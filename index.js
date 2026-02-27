@@ -349,7 +349,7 @@
         data-counter="${entry.counter || 0}"`;
 
       return `
-        <div class="code-card" ${dataAttrs} oncontextmenu="return window.app.showContextMenu(event, '${entry.id}')">
+        <div class="code-card" ${dataAttrs}>
           <div class="code-card-header">
             <div class="code-info">
               <div class="code-name">${escapeHtml(name)}</div>
@@ -375,18 +375,6 @@
         </div>
       `;
     }).join('');
-
-    // 绑定点击事件 - 复制验证码
-    $$('.code-card').forEach(card => {
-      card.addEventListener('click', (e) => {
-        // 如果是右键菜单的，不触发链接复制
-        if (e.button === 0) {
-          const codeEl = card.querySelector('.code-value');
-          const code = codeEl.textContent.replace(/\s/g, '');
-          copyToClipboard(code, card);
-        }
-      });
-    });
 
     // 立即刷新验证码
     refreshCodes();
@@ -417,23 +405,13 @@
     }
 
     list.innerHTML = filtered.map(entry => `
-      <div class="manage-item" data-id="${entry.id}" oncontextmenu="return window.app.showContextMenu(event, '${entry.id}')">
+      <div class="manage-item" data-id="${entry.id}">
         <div class="manage-item-info">
           <div class="manage-item-name">${escapeHtml(entry.name || '未命名')}</div>
           <div class="manage-item-issuer">${escapeHtml(entry.issuer || '')}</div>
         </div>
       </div>
     `).join('');
-
-    // 绑定点击事件 - 左键编辑
-    $$('.manage-item').forEach(item => {
-      item.addEventListener('click', (e) => {
-        if (e.button === 0) {
-          const id = item.dataset.id;
-          editEntry(id);
-        }
-      });
-    });
   }
 
   // 刷新验证码
@@ -1013,6 +991,37 @@
     // 导航切换
     $$('.nav-btn').forEach(btn => {
       btn.addEventListener('click', () => switchView(btn.dataset.view));
+    });
+
+    // 首页卡片事件委托
+    $('#codeGrid')?.addEventListener('click', (e) => {
+      const card = e.target.closest('.code-card');
+      if (!card || !$('#codeGrid').contains(card)) return;
+      const codeEl = card.querySelector('.code-value');
+      const code = (codeEl?.textContent || '').replace(/\s/g, '');
+      if (code) copyToClipboard(code, card);
+    });
+
+    $('#codeGrid')?.addEventListener('contextmenu', (e) => {
+      const card = e.target.closest('.code-card');
+      if (!card || !$('#codeGrid').contains(card)) return;
+      const id = card.dataset.id;
+      if (id) showContextMenu(e, id);
+    });
+
+    // 管理列表事件委托
+    $('#manageList')?.addEventListener('click', (e) => {
+      const item = e.target.closest('.manage-item');
+      if (!item || !$('#manageList').contains(item)) return;
+      const id = item.dataset.id;
+      if (id) editEntry(id);
+    });
+
+    $('#manageList')?.addEventListener('contextmenu', (e) => {
+      const item = e.target.closest('.manage-item');
+      if (!item || !$('#manageList').contains(item)) return;
+      const id = item.dataset.id;
+      if (id) showContextMenu(e, id);
     });
 
     // 主题切换
