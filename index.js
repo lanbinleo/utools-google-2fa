@@ -269,6 +269,8 @@
   let currentView = 'home';
   let editingId = null;
   let refreshInterval = null;
+  let addDialogInitialState = null;
+  let addDialogEscapeRequested = false;
 
   // ==================== DOM 元素 ====================
 
@@ -482,6 +484,39 @@
 
   // ==================== 功能函数 ====================
 
+  function getAddFormState() {
+    return {
+      name: $('#nameInput')?.value || '',
+      issuer: $('#issuerInput')?.value || '',
+      secret: $('#secretInput')?.value || '',
+      algorithm: $('#algorithmInput')?.value || 'SHA1',
+      digits: $('#digitsInput')?.value || '6',
+      type: $('#otpTypeInput')?.value || 'totp',
+      period: $('#periodInput')?.value || '30',
+      counter: $('#counterInput')?.value || '0'
+    };
+  }
+
+  function markAddDialogClean() {
+    addDialogInitialState = JSON.stringify(getAddFormState());
+  }
+
+  function isAddDialogDirty() {
+    if (!addDialogInitialState) return false;
+    return JSON.stringify(getAddFormState()) !== addDialogInitialState;
+  }
+
+  function closeAddDialogWithGuard() {
+    const dialog = $('#addDialog');
+    if (!dialog || !dialog.open) return true;
+    if (isAddDialogDirty()) {
+      const confirmed = confirm('当前修改未保存，确定关闭吗？');
+      if (!confirmed) return false;
+    }
+    dialog.close();
+    return true;
+  }
+
   // 切换视图
   function switchView(view) {
     currentView = view;
@@ -648,6 +683,7 @@
     $('#deleteBtn').style.display = 'block';
 
     $('#addDialog').showModal();
+    markAddDialogClean();
   }
 
   // 显示右键菜单
@@ -946,6 +982,7 @@
 
       // 自动检测剪贴板并显示提示
       await checkClipboardAndShowHint();
+      markAddDialogClean();
     });
 
     // 一键导入按钮
@@ -961,17 +998,26 @@
       // 自动尝试从剪贴板读取
       const parsed = await handlePaste('addFirstBtn');
       if (parsed) applyParsedData(parsed);
+      markAddDialogClean();
     });
 
     // 关闭弹窗
     $('#closeDialog').addEventListener('click', () => {
-      $('#addDialog').close();
+      closeAddDialogWithGuard();
     });
 
-    $('#addDialog').addEventListener('click', (e) => {
-      if (e.target === $('#addDialog')) {
-        $('#addDialog').close();
+    $('#addDialog').addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        addDialogEscapeRequested = true;
       }
+    });
+
+    $('#addDialog').addEventListener('cancel', (e) => {
+      e.preventDefault();
+      if (addDialogEscapeRequested) {
+        closeAddDialogWithGuard();
+      }
+      addDialogEscapeRequested = false;
     });
 
     // 粘贴按钮
