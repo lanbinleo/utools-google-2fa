@@ -269,34 +269,39 @@ html, body {
   color: var(--accent);
 }
 
-/* 计时器圆环 */
+/* 计时器圆环 - 使用 SVG 实现平滑过渡 */
 .timer-circle {
   width: 44px;
   height: 44px;
-  border-radius: 50%;
-  background: conic-gradient(
-    var(--accent) calc(var(--progress, 0) * 1%),
-    var(--surface-hover) calc(var(--progress, 0) * 1%)
-  );
-  display: flex;
-  align-items: center;
-  justify-content: center;
   position: relative;
-  transition: background 0.3s ease;
 }
 
-.timer-circle::before {
-  content: '';
+.timer-circle svg {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.timer-circle .circle-bg {
+  fill: none;
+  stroke: var(--surface-hover);
+  stroke-width: 3;
+}
+
+.timer-circle .circle-progress {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.3s ease;
+}
+
+.timer-circle .timer-text {
   position: absolute;
-  width: 34px;
-  height: 34px;
-  background: var(--surface);
-  border-radius: 50%;
-}
-
-.timer-text {
-  position: relative;
-  font-size: 12px;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 11px;
   font-weight: 600;
   color: var(--text-secondary);
 }
@@ -509,6 +514,11 @@ html, body {
   position: relative;
 }
 
+.input-with-paste textarea {
+  padding-right: 44px;
+  min-height: 80px;
+}
+
 .paste-btn {
   position: absolute;
   right: 8px;
@@ -527,11 +537,43 @@ html, body {
 
 .paste-btn:hover {
   color: var(--accent);
+  background: var(--accent-light);
 }
 
 .paste-btn svg {
   width: 16px;
   height: 16px;
+}
+
+/* 剪贴板提示 */
+.clipboard-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: var(--accent-light);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  margin-bottom: 16px;
+}
+
+.clipboard-hint span {
+  font-size: 13px;
+  color: var(--accent);
+}
+
+.btn-hint {
+  padding: 6px 12px;
+  border: none;
+  background: var(--accent);
+  color: white;
+  font-size: 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.btn-hint:hover {
+  background: var(--accent-hover);
 }
 
 /* 高级选项 */

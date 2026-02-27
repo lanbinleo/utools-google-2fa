@@ -307,7 +307,12 @@
                  data-type="${entry.type || 'totp'}"
                  data-period="${period}"
                  data-counter="${entry.counter || 0}">------</div>
-            <div class="timer-circle" style="--progress: ${progress}">
+            <div class="timer-circle" data-period="${period}">
+              <svg viewBox="0 0 44 44">
+                <circle class="circle-bg" cx="22" cy="22" r="19"/>
+                <circle class="circle-progress" cx="22" cy="22" r="19"
+                  style="stroke-dasharray: 119.38; stroke-dashoffset: ${119.38 * (1 - progress / 100)}"/>
+              </svg>
               <span class="timer-text">${period - seconds}</span>
             </div>
           </div>
@@ -340,7 +345,22 @@
       return;
     }
 
-    list.innerHTML = entries.map(entry => `
+    // 搜索过滤
+    const searchTerm = $('#searchInput').value.toLowerCase();
+    let filtered = entries;
+    if (searchTerm) {
+      filtered = entries.filter(e =>
+        (e.name || '').toLowerCase().includes(searchTerm) ||
+        (e.issuer || '').toLowerCase().includes(searchTerm)
+      );
+    }
+
+    if (filtered.length === 0) {
+      list.innerHTML = '<div class="empty-state show"><p>未找到匹配条目</p></div>';
+      return;
+    }
+
+    list.innerHTML = filtered.map(entry => `
       <div class="manage-item" data-id="${entry.id}" oncontextmenu="return window.app.showContextMenu(event, '${entry.id}')">
         <div class="manage-item-info">
           <div class="manage-item-name">${escapeHtml(entry.name || '未命名')}</div>
@@ -395,8 +415,13 @@
     const period = 30;
     const seconds = Math.floor(now / 1000) % period;
     const progress = ((period - seconds) / period) * 100;
+    const circumference = 2 * Math.PI * 19; // r=19
+
     $$('.timer-circle').forEach(circle => {
-      circle.style.setProperty('--progress', progress);
+      const progressCircle = circle.querySelector('.circle-progress');
+      if (progressCircle) {
+        progressCircle.style.strokeDashoffset = circumference * (1 - progress / 100);
+      }
       const text = circle.querySelector('.timer-text');
       if (text) text.textContent = period - seconds;
     });
@@ -651,34 +676,74 @@
       if (!text && navigator.clipboard) {
         text = await navigator.clipboard.readText();
       }
-      if (!text) return;
+      if (!text) return null;
 
       const trimmed = text.trim();
 
-      // 1. 尝试解析 otpauth URL
+      // 尝试解析 otpauth URL
       const parsed = parseOtpauthUrl(trimmed);
       if (parsed) {
-        $('#nameInput').value = parsed.name || '';
-        $('#issuerInput').value = parsed.issuer || '';
-        $('#secretInput').value = parsed.secret || '';
-        $('#algorithmInput').value = parsed.algorithm;
-        $('#digitsInput').value = parsed.digits;
-        $('#otpTypeInput').value = parsed.type;
-        $('#periodInput').value = parsed.period;
-        if (parsed.counter) {
-          $('#counterInput').value = parsed.counter;
-        }
-        showToast('已从剪贴板解析 otpauth', 'success');
-        return true;
+        return parsed;
       }
 
-      // 2. 尝试从图片识别（需要实现）
-      // 这里只是把文本放入输入框
-      $('#secretInput').value = trimmed;
-      return false;
+      return null;
     } catch (e) {
       console.error('Paste error:', e);
-      return false;
+      return null;
+    }
+  }
+
+  // 应用解析结果到表单
+  function applyParsedData(parsed) {
+    if (!parsed) return false;
+
+    $('#nameInput').value = parsed.name || '';
+    $('#issuerInput').value = parsed.issuer || '';
+    $('#secretInput').value = parsed.secret || '';
+    $('#algorithmInput').value = parsed.algorithm;
+    $('#digitsInput').value = parsed.digits;
+    $('#otpTypeInput').value = parsed.type;
+    $('#periodInput').value = parsed.period;
+    if (parsed.counter) {
+      $('#counterInput').value = parsed.counter;
+    }
+
+    // 隐藏剪贴板提示
+    $('#clipboardHint').style.display = 'none';
+    return true;
+  }
+
+  // 检测剪贴板并自动填写
+  async function checkClipboardAndShowHint() {
+    const parsed = await handlePaste();
+    const hint = $('#clipboardHint');
+
+    if (parsed) {
+      // 自动填写到表单
+      applyParsedData(parsed);
+      // 显示提示
+      hint.style.display = 'flex';
+      hint.querySelector('span').textContent = '已自动识别: ' + (parsed.name || parsed.issuer || '验证码');
+      // 存储解析结果供一键导入使用（用于刷新）
+      hint.dataset.parsed = JSON.stringify(parsed);
+    } else {
+      hint.style.display = 'none';
+    }
+
+    return parsed;
+  }
+
+  // 一键导入剪贴板中的 otpauth
+  async function applyClipboardImport() {
+    const hint = $('#clipboardHint');
+    try {
+      const parsed = JSON.parse(hint.dataset.parsed);
+      const success = applyParsedData(parsed);
+      if (success) {
+        showToast('已导入: ' + (parsed.name || parsed.issuer), 'success');
+      }
+    } catch (e) {
+      console.error('导入失败:', e);
     }
   }
 
@@ -719,11 +784,15 @@
       $('#dialogTitle').textContent = '添加验证码';
       $('#addForm').reset();
       $('#deleteBtn').style.display = 'none';
+      $('#clipboardHint').style.display = 'none';
       $('#addDialog').showModal();
 
-      // 自动尝试从剪贴板读取
-      await handlePaste();
+      // 自动检测剪贴板并显示提示
+      await checkClipboardAndShowHint();
     });
+
+    // 一键导入按钮
+    $('#applyClipboardBtn')?.addEventListener('click', applyClipboardImport);
 
     $('#addFirstBtn')?.addEventListener('click', async () => {
       editingId = null;
@@ -812,12 +881,16 @@
       }
     });
 
-    // 搜索
+    // 搜索 - 两个视图都支持
     $('#searchInput').addEventListener('input', () => {
-      if (currentView === 'home') renderHomeView();
+      if (currentView === 'home') {
+        renderHomeView();
+      } else {
+        renderManageView();
+      }
     });
 
-    // 排序
+    // 排序 - 仅首页
     $('#sortSelect').addEventListener('change', () => {
       if (currentView === 'home') renderHomeView();
     });

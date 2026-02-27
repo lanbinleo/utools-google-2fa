@@ -77,6 +77,12 @@
           </button>
         </div>
 
+        <!-- 剪贴板检测提示 -->
+        <div class="clipboard-hint" id="clipboardHint" style="display:none">
+          <span>检测到剪贴板中有验证码链接</span>
+          <button type="button" class="btn-hint" id="applyClipboardBtn">一键导入</button>
+        </div>
+
         <!-- 简单模式：只需名字和密钥 -->
         <div class="form-basic">
           <label class="form-label">
@@ -90,7 +96,7 @@
           <label class="form-label">
             <span>密钥</span>
             <div class="input-with-paste">
-              <textarea id="secretInput" rows="2" placeholder="粘贴密钥或 otpauth:// 链接" required></textarea>
+              <textarea id="secretInput" rows="3" placeholder="粘贴密钥或 otpauth:// 链接" required></textarea>
               <button type="button" class="paste-btn" id="pasteBtn" title="从剪贴板粘贴">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2"/>
