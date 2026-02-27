@@ -517,6 +517,14 @@
     return true;
   }
 
+  function syncOtpTypeVisibility() {
+    const counterLabel = $('#counterLabel');
+    const otpType = $('#otpTypeInput')?.value || 'totp';
+    if (counterLabel) {
+      counterLabel.style.display = otpType === 'hotp' ? 'flex' : 'none';
+    }
+  }
+
   function prepareCreateDialog() {
     editingId = null;
     $('#dialogTitle').textContent = '添加验证码';
@@ -524,6 +532,7 @@
     $('#deleteBtn').style.display = 'none';
     $('#clipboardHint').style.display = 'none';
     delete $('#clipboardHint').dataset.parsed;
+    syncOtpTypeVisibility();
   }
 
   // 切换视图
@@ -689,6 +698,8 @@
     $('#digitsInput').value = entry.digits || 6;
     $('#otpTypeInput').value = entry.type || 'totp';
     $('#periodInput').value = entry.period || 30;
+    $('#counterInput').value = entry.counter || 0;
+    syncOtpTypeVisibility();
     $('#deleteBtn').style.display = 'block';
 
     $('#addDialog').showModal();
@@ -857,9 +868,10 @@
     $('#digitsInput').value = parsed.digits;
     $('#otpTypeInput').value = parsed.type;
     $('#periodInput').value = parsed.period;
-    if (parsed.counter) {
+    if (parsed.counter !== undefined) {
       $('#counterInput').value = parsed.counter;
     }
+    syncOtpTypeVisibility();
 
     // 隐藏剪贴板提示
     $('#clipboardHint').style.display = 'none';
@@ -1074,7 +1086,7 @@
         data.digits = parsed.digits;
         data.type = parsed.type;
         data.period = parsed.period;
-        if (parsed.counter) data.counter = parsed.counter;
+        if (parsed.counter !== undefined) data.counter = parsed.counter;
       }
 
       const success = await saveEntry(data);
@@ -1093,11 +1105,8 @@
     });
 
     // HOTP 类型切换时显示/隐藏 counter
-    $('#otpTypeInput').addEventListener('change', (e) => {
-      const counterLabel = $('#counterLabel');
-      if (counterLabel) {
-        counterLabel.style.display = e.target.value === 'hotp' ? 'flex' : 'none';
-      }
+    $('#otpTypeInput').addEventListener('change', () => {
+      syncOtpTypeVisibility();
     });
 
     // 搜索 - 两个视图都支持
