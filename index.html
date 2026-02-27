@@ -84,6 +84,10 @@
             <input type="text" id="nameInput" placeholder="例如：GitHub" required>
           </label>
           <label class="form-label">
+            <span>发行方</span>
+            <input type="text" id="issuerInput" placeholder="可选，例如：Google">
+          </label>
+          <label class="form-label">
             <span>密钥</span>
             <div class="input-with-paste">
               <textarea id="secretInput" rows="2" placeholder="粘贴密钥或 otpauth:// 链接" required></textarea>
@@ -132,6 +136,10 @@
                 <input type="number" id="periodInput" value="30" min="10" max="120">
               </label>
             </div>
+            <label class="form-label" id="counterLabel" style="display:none">
+              <span>计数器（HOTP）</span>
+              <input type="number" id="counterInput" value="0" min="0">
+            </label>
           </div>
         </details>
 
