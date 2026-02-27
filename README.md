@@ -86,6 +86,7 @@ localStorage.removeItem('google2fa_debug_clipboard')
 
 - `docs/dev-context.md`：HTML/JS/CSS 分段与主要函数索引
 - `docs/migration-v1-design.md`：迁移页面 v1 设计与迭代计划
+- `CHANGELOG.md`：版本变更记录（含 alpha 回溯与正式版本）
 
 ## 开发说明
 
