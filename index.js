@@ -517,6 +517,15 @@
     return true;
   }
 
+  function prepareCreateDialog() {
+    editingId = null;
+    $('#dialogTitle').textContent = '添加验证码';
+    $('#addForm').reset();
+    $('#deleteBtn').style.display = 'none';
+    $('#clipboardHint').style.display = 'none';
+    delete $('#clipboardHint').dataset.parsed;
+  }
+
   // 切换视图
   function switchView(view) {
     currentView = view;
@@ -858,15 +867,14 @@
     const hint = $('#clipboardHint');
 
     if (parsed) {
-      // 自动填写到表单
-      applyParsedData(parsed);
       // 显示提示
       hint.style.display = 'flex';
-      hint.querySelector('span').textContent = '已自动识别: ' + (parsed.name || parsed.issuer || '验证码');
-      // 存储解析结果供一键导入使用（用于刷新）
+      hint.querySelector('span').textContent = '检测到剪贴板验证码：' + (parsed.name || parsed.issuer || '点击导入');
+      // 存储解析结果供导入使用
       hint.dataset.parsed = JSON.stringify(parsed);
     } else {
       hint.style.display = 'none';
+      delete hint.dataset.parsed;
     }
 
     logClipboardDebug('checkClipboardAndShowHint:done', {
@@ -879,6 +887,7 @@
   async function applyClipboardImport() {
     const hint = $('#clipboardHint');
     try {
+      if (!hint.dataset.parsed) return;
       const parsed = JSON.parse(hint.dataset.parsed);
       const success = applyParsedData(parsed);
       if (success) {
@@ -973,14 +982,10 @@
 
     // 添加按钮 - 新建时自动读取剪贴板
     $('#addBtn').addEventListener('click', async () => {
-      editingId = null;
-      $('#dialogTitle').textContent = '添加验证码';
-      $('#addForm').reset();
-      $('#deleteBtn').style.display = 'none';
-      $('#clipboardHint').style.display = 'none';
+      prepareCreateDialog();
       $('#addDialog').showModal();
 
-      // 自动检测剪贴板并显示提示
+      // 检测剪贴板，仅提示，不自动导入
       await checkClipboardAndShowHint();
       markAddDialogClean();
     });
@@ -989,15 +994,11 @@
     $('#applyClipboardBtn')?.addEventListener('click', applyClipboardImport);
 
     $('#addFirstBtn')?.addEventListener('click', async () => {
-      editingId = null;
-      $('#dialogTitle').textContent = '添加验证码';
-      $('#addForm').reset();
-      $('#deleteBtn').style.display = 'none';
+      prepareCreateDialog();
       $('#addDialog').showModal();
 
-      // 自动尝试从剪贴板读取
-      const parsed = await handlePaste('addFirstBtn');
-      if (parsed) applyParsedData(parsed);
+      // 检测剪贴板，仅提示，不自动导入
+      await checkClipboardAndShowHint();
       markAddDialogClean();
     });
 
