@@ -466,13 +466,13 @@
       }
     }
 
-    // 刷新进度条
-    const period = 30;
-    const seconds = Math.floor(now / 1000) % period;
-    const progress = ((period - seconds) / period) * 100;
     const circumference = 2 * Math.PI * 19; // r=19
 
     $$('.timer-circle').forEach(circle => {
+      const period = parseInt(circle.dataset.period) || 30;
+      const seconds = Math.floor(now / 1000) % period;
+      const progress = ((period - seconds) / period) * 100;
+
       const progressCircle = circle.querySelector('.circle-progress');
       if (progressCircle) {
         progressCircle.style.strokeDashoffset = circumference * (1 - progress / 100);
