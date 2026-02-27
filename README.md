@@ -82,7 +82,3 @@ localStorage.removeItem('google2fa_debug_clipboard')
   - `Tags`
   - `弃用` 状态
   - `置顶` 策略与排序规则
-
----
-
-如果你准备继续下一步，我可以先给出“迁移与导出页面 + tags/弃用/置顶”的信息架构和交互草案（先设计再落代码）。
