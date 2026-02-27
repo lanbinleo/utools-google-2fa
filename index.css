@@ -232,6 +232,10 @@ html, body {
   transform: scale(0.98);
 }
 
+.code-card.is-last-row {
+  margin-bottom: 12px;
+}
+
 .code-card-header {
   display: flex;
   justify-content: space-between;
@@ -409,6 +413,10 @@ html, body {
 
 .manage-item:hover {
   border-color: var(--accent);
+}
+
+.manage-list .manage-item:last-child {
+  margin-bottom: 12px;
 }
 
 .manage-item-info {

@@ -302,6 +302,19 @@
 
   // ==================== UI 渲染 ====================
 
+  function markLastRowCards() {
+    const cards = Array.from($$('#codeGrid .code-card'));
+    cards.forEach(card => card.classList.remove('is-last-row'));
+    if (!cards.length) return;
+
+    const maxTop = Math.max(...cards.map(card => card.offsetTop));
+    cards.forEach(card => {
+      if (card.offsetTop === maxTop) {
+        card.classList.add('is-last-row');
+      }
+    });
+  }
+
   // 渲染首页验证码卡片
   function renderHomeView() {
     const grid = $('#codeGrid');
@@ -386,6 +399,7 @@
 
     // 立即刷新验证码
     refreshCodes();
+    markLastRowCards();
   }
 
   // 渲染管理列表
@@ -1199,6 +1213,12 @@
     // 排序 - 仅首页
     $('#sortSelect').addEventListener('change', () => {
       if (currentView === 'home') renderHomeView();
+    });
+
+    window.addEventListener('resize', () => {
+      if (currentView === 'home') {
+        markLastRowCards();
+      }
     });
 
     // 初始渲染
