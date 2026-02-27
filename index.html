@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Google 2FA</title>
+  <link rel="stylesheet" href="index.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand-block">
+        <div class="brand-logo" aria-hidden="true">G</div>
+        <div>
+          <h1 class="brand-title">Google 2FA</h1>
+          <p class="brand-subtitle">安全、简洁、快速</p>
+        </div>
+      </div>
+
+      <div class="topbar-actions">
+        <button class="btn" id="homeBtn" type="button">主页</button>
+        <button class="btn" id="manageBtn" type="button">管理</button>
+        <button class="btn" id="newEntryBtn" type="button">新建</button>
+        <button class="btn" id="importBtn" type="button">导入</button>
+        <button class="btn" id="exportBtn" type="button">导出</button>
+        <button class="btn" id="themeBtn" type="button">主题</button>
+      </div>
+    </header>
+
+    <section class="toolbar">
+      <input id="searchInput" class="search-input" type="search" placeholder="搜索名称、账户、标签">
+      <select id="sortSelect" class="select-input" aria-label="排序">
+        <option value="common">常用优先</option>
+        <option value="recent">最近使用</option>
+        <option value="name">按名称</option>
+      </select>
+      <span id="summaryText" class="summary-text"></span>
+    </section>
+
+    <main class="content">
+      <section id="homeView" class="view active" aria-label="主页双栏验证码"></section>
+
+      <section id="manageView" class="view" aria-label="列表管理页面">
+        <div class="manage-layout">
+          <aside class="manage-list">
+            <div class="manage-list-header">
+              <h2>条目列表</h2>
+              <button id="createInManageBtn" class="btn btn-primary" type="button">新建</button>
+            </div>
+            <div id="manageListBody" class="manage-list-body"></div>
+          </aside>
+
+          <section class="manage-detail">
+            <h2 id="detailTitle">新建条目</h2>
+            <form id="entryForm" class="entry-form" autocomplete="off">
+              <input type="hidden" id="entryId">
+
+              <label>显示名称
+                <input id="nameInput" required maxlength="80" placeholder="例如：GitHub / Binance">
+              </label>
+
+              <label>发行方（Issuer）
+                <input id="issuerInput" maxlength="80" placeholder="例如：Google">
+              </label>
+
+              <label>账户（Account）
+                <input id="accountInput" maxlength="120" placeholder="例如：name@example.com">
+              </label>
+
+              <label>密钥（Secret）
+                <textarea id="secretInput" rows="3" required placeholder="粘贴 Base32 或 Hex 密钥"></textarea>
+              </label>
+
+              <div class="inline-grid">
+                <label>密钥编码
+                  <select id="secretEncodingInput">
+                    <option value="base32">Base32</option>
+                    <option value="hex">Hex</option>
+                  </select>
+                </label>
+
+                <label>算法
+                  <select id="algorithmInput">
+                    <option value="SHA1">SHA1</option>
+                    <option value="SHA256">SHA256</option>
+                    <option value="SHA512">SHA512</option>
+                  </select>
+                </label>
+
+                <label>OTP 类型
+                  <select id="otpTypeInput">
+                    <option value="totp">TOTP</option>
+                    <option value="hotp">HOTP</option>
+                  </select>
+                </label>
+
+                <label>位数
+                  <input id="digitsInput" type="number" min="4" max="10" value="6">
+                </label>
+
+                <label>周期（秒，TOTP）
+                  <input id="periodInput" type="number" min="5" max="120" value="30">
+                </label>
+
+                <label>计数器（HOTP）
+                  <input id="counterInput" type="number" min="0" value="0">
+                </label>
+              </div>
+
+              <label>标签（逗号分隔）
+                <input id="tagsInput" maxlength="200" placeholder="工作, 交易所, 邮箱">
+              </label>
+
+              <label>备注
+                <textarea id="noteInput" rows="2" maxlength="300" placeholder="可选"></textarea>
+              </label>
+
+              <div class="inline-grid">
+                <label>排序加权
+                  <input id="rankBoostInput" type="number" min="0" max="100" value="0">
+                </label>
+
+                <label class="checkbox-label">
+                  <input id="pinnedInput" type="checkbox">
+                  置顶
+                </label>
+              </div>
+
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary">保存</button>
+                <button id="clearFormBtn" type="button" class="btn">清空</button>
+                <button id="deleteEntryBtn" type="button" class="btn btn-danger">删除</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      </section>
+    </main>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </div>
+
+  <dialog id="importDialog" class="modal">
+    <form method="dialog" class="modal-content">
+      <header class="modal-header">
+        <h3>导入 2FA 条目</h3>
+        <button class="btn" value="cancel">关闭</button>
+      </header>
+
+      <p class="modal-note">支持 `otpauth://`、JSON 备份，以及截图/图片二维码导入。</p>
+
+      <label>粘贴 otpauth 链接（可多行）
+        <textarea id="otpauthInput" rows="4" placeholder="otpauth://totp/..."></textarea>
+      </label>
+      <div class="row-actions">
+        <button id="importOtpauthBtn" class="btn btn-primary" type="button">导入 otpauth</button>
+      </div>
+
+      <label>粘贴 JSON 备份
+        <textarea id="jsonImportInput" rows="5" placeholder='{"entries": [...]}'></textarea>
+      </label>
+      <label>加密备份口令（仅加密备份需要）
+        <input id="importPassphraseInput" type="password" placeholder="可留空">
+      </label>
+      <div class="row-actions">
+        <button id="importJsonBtn" class="btn btn-primary" type="button">导入 JSON</button>
+      </div>
+
+      <div class="row-actions wrap">
+        <button id="scanScreenBtn" class="btn" type="button">扫描屏幕二维码</button>
+        <label class="btn file-btn">从图片识别二维码
+          <input id="qrFileInput" type="file" accept="image/*" hidden>
+        </label>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="exportDialog" class="modal">
+    <form method="dialog" class="modal-content">
+      <header class="modal-header">
+        <h3>导出 2FA 条目</h3>
+        <button class="btn" value="cancel">关闭</button>
+      </header>
+
+      <p class="modal-note">支持明文 JSON 与口令加密备份；也可导出 otpauth 列表。</p>
+
+      <label>加密口令（用于加密导出）
+        <input id="exportPassphraseInput" type="password" placeholder="至少 6 位">
+      </label>
+
+      <div class="row-actions wrap">
+        <button id="copyPlainExportBtn" type="button" class="btn">复制明文 JSON</button>
+        <button id="savePlainExportBtn" type="button" class="btn">保存明文 JSON</button>
+        <button id="copyEncryptedExportBtn" type="button" class="btn btn-primary">复制加密备份</button>
+        <button id="saveEncryptedExportBtn" type="button" class="btn btn-primary">保存加密备份</button>
+        <button id="copyOtpauthListBtn" type="button" class="btn">复制 otpauth 列表</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="index.js"></script>
+</body>
+</html>

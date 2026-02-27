@@ -1,0 +1,31 @@
+{
+  "pluginName": "Google 2FA",
+  "description": "简约高效的谷歌 2FA 验证器",
+  "logo": "logo.png",
+  "main": "index.html",
+  "preload": "preload.js",
+  "features": [
+    {
+      "code": "google2fa",
+      "cmds": [
+        "google 2fa",
+        "2fa",
+        "谷歌验证码",
+        "动态口令"
+      ],
+      "explain": "查看双栏验证码主页"
+    },
+    {
+      "code": "google2fa-manage",
+      "cmds": [
+        "2fa 管理",
+        "验证码管理"
+      ],
+      "explain": "进入条目管理页面"
+    }
+  ],
+  "pluginSetting": {
+    "single": true,
+    "height": 680
+  }
+}
