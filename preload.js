@@ -1,6 +1,17 @@
 // uTools 插件预加载脚本
 // 提供与 Node.js 和 uTools 的桥接
 
+const CLIPBOARD_DEBUG_TAG = '[ClipboardDebug/preload]';
+
+function maskClipboardPreview(text) {
+  if (typeof text !== 'string') return text;
+  let masked = text.replace(/(secret=)[^&\s]+/ig, '$1***');
+  if (masked.length > 120) {
+    masked = masked.slice(0, 120) + '...';
+  }
+  return masked;
+}
+
 // uTools 环境下使用 utools API，否则提供降级实现
 window.utoolsBridge = {
   // 读取文本
@@ -20,11 +31,66 @@ window.utoolsBridge = {
 
   // 剪贴板 - 读取文本
   getClipboardText() {
-    if (window.utools && window.utools.clipboard) {
-      return window.utools.clipboard.readText();
+    try {
+      const hasUtoolsClipboard = !!(window.utools && window.utools.clipboard);
+      const hasNavigatorClipboard = !!(navigator.clipboard && navigator.clipboard.readText);
+      console.log(CLIPBOARD_DEBUG_TAG, 'getClipboardText called', {
+        hasUtoolsClipboard,
+        hasNavigatorClipboard
+      });
+
+      if (hasUtoolsClipboard) {
+        const text = window.utools.clipboard.readText();
+        console.log(CLIPBOARD_DEBUG_TAG, 'utools.clipboard.readText result', {
+          type: typeof text,
+          preview: maskClipboardPreview(text)
+        });
+        return text;
+      }
+
+      // 浏览器环境降级
+      const result = navigator.clipboard?.readText() || null;
+      console.log(CLIPBOARD_DEBUG_TAG, 'navigator.clipboard.readText result', {
+        type: typeof result,
+        isPromise: !!(result && typeof result.then === 'function')
+      });
+      return result;
+    } catch (e) {
+      console.error(CLIPBOARD_DEBUG_TAG, 'getClipboardText error', e);
+      return null;
     }
-    // 浏览器环境降级
-    return navigator.clipboard?.readText() || null;
+  },
+
+  // 剪贴板调试快照
+  async debugClipboardSnapshot() {
+    const snapshot = {
+      hasUtools: !!window.utools,
+      hasUtoolsClipboard: !!(window.utools && window.utools.clipboard),
+      hasNavigatorClipboard: !!(navigator.clipboard && navigator.clipboard.readText)
+    };
+
+    try {
+      if (snapshot.hasUtoolsClipboard) {
+        const utoolsText = window.utools.clipboard.readText();
+        snapshot.utoolsReadType = typeof utoolsText;
+        snapshot.utoolsReadPreview = maskClipboardPreview(utoolsText);
+      }
+    } catch (e) {
+      snapshot.utoolsReadError = e && e.message ? e.message : String(e);
+    }
+
+    try {
+      if (snapshot.hasNavigatorClipboard) {
+        const navText = await navigator.clipboard.readText();
+        snapshot.navigatorReadType = typeof navText;
+        snapshot.navigatorReadPreview = maskClipboardPreview(navText);
+      }
+    } catch (e) {
+      snapshot.navigatorReadError = e && e.message ? e.message : String(e);
+    }
+
+    console.log(CLIPBOARD_DEBUG_TAG, 'debugClipboardSnapshot', snapshot);
+    return snapshot;
   },
 
   // 剪贴板 - 写入文本

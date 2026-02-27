@@ -489,6 +489,8 @@ html, body {
 .form-label input,
 .form-label textarea,
 .form-label select {
+  width: 100%;
+  box-sizing: border-box;
   padding: 10px 12px;
   border: 1px solid var(--border);
   background: var(--bg);
@@ -515,8 +517,8 @@ html, body {
 }
 
 .input-with-paste textarea {
+  display: block;
   padding-right: 44px;
-  min-height: 80px;
 }
 
 .paste-btn {

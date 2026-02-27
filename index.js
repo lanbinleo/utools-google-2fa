@@ -146,58 +146,97 @@
 
   function parseOtpauthUrl(url) {
     try {
-      const trimmed = url.trim();
-      if (!trimmed.startsWith('otpauth://')) {
-        // 尝试自动添加协议
-        if (trimmed.startsWith('otpauth')) {
-          trimmed = 'otpauth://' + trimmed.slice(7);
+      if (typeof url !== 'string') return null;
+      let trimmed = url.trim();
+      if (!trimmed) return null;
+
+      // 统一协议格式：支持 otpauth://... / otpauth:...
+      if (trimmed.startsWith('otpauth://')) {
+        // do nothing
+      } else if (trimmed.startsWith('otpauth:')) {
+        trimmed = 'otpauth://' + trimmed.slice('otpauth:'.length).replace(/^\/+/, '');
+      } else {
+        return null;
+      }
+
+      // 手动解析，避免部分环境对自定义协议 URL 解析不一致
+      const body = trimmed.slice('otpauth://'.length);
+      const firstSlash = body.indexOf('/');
+      if (firstSlash <= 0) return null;
+
+      const type = body.slice(0, firstSlash).toLowerCase();
+      if (type !== 'totp' && type !== 'hotp') return null;
+
+      const rest = body.slice(firstSlash + 1);
+      const qIndex = rest.indexOf('?');
+      const rawLabel = qIndex >= 0 ? rest.slice(0, qIndex) : rest;
+      const rawQuery = qIndex >= 0 ? rest.slice(qIndex + 1) : '';
+
+      let label = '';
+      try {
+        label = decodeURIComponent(rawLabel || '');
+      } catch (_) {
+        label = rawLabel || '';
+      }
+
+      let issuer = '';
+      let name = label;
+      const labelColonIndex = label.indexOf(':');
+      if (labelColonIndex >= 0) {
+        issuer = label.slice(0, labelColonIndex).trim();
+        name = label.slice(labelColonIndex + 1).trim();
+      }
+
+      const params = {};
+      if (rawQuery) {
+        if (typeof URLSearchParams !== 'undefined') {
+          const searchParams = new URLSearchParams(rawQuery);
+          for (const [key, value] of searchParams.entries()) {
+            params[key] = value;
+          }
         } else {
-          return null;
+          const safeDecode = (v) => {
+            try {
+              return decodeURIComponent(v.replace(/\+/g, ' '));
+            } catch (_) {
+              return v;
+            }
+          };
+          rawQuery.split('&').forEach(pair => {
+            if (!pair) return;
+            const eqIndex = pair.indexOf('=');
+            const rawKey = eqIndex >= 0 ? pair.slice(0, eqIndex) : pair;
+            const rawValue = eqIndex >= 0 ? pair.slice(eqIndex + 1) : '';
+            const key = safeDecode(rawKey);
+            const value = safeDecode(rawValue);
+            params[key] = value;
+          });
         }
       }
 
-      const urlObj = new URL(trimmed);
-      if (urlObj.protocol !== 'otpauth:') return null;
-
-      const type = urlObj.hostname.toLowerCase(); // totp 或 hotp
-      if (type !== 'totp' && type !== 'hotp') return null;
-
-      // 解析路径（通常是 issuer:name 或只有 name）
-      let path = decodeURIComponent(urlObj.pathname.slice(1));
-      let name = path;
-      let issuer = '';
-
-      // 路径格式可能是 "issuer:name" 或只有 "name"
-      if (path.includes(':')) {
-        const parts = path.split(':');
-        issuer = parts[0];
-        name = parts.slice(1).join(':');
-      }
-
-      // 解析查询参数
-      const params = Object.fromEntries(urlObj.searchParams);
-
-      // issuer 参数可能覆盖路径中的 issuer
       if (params.issuer) {
-        issuer = params.issuer;
+        issuer = params.issuer.trim();
       }
 
-      // secret 是必需的
-      if (!params.secret) return null;
+      const secretRaw = typeof params.secret === 'string' ? params.secret.trim() : '';
+      if (!secretRaw) return null;
+
+      const digits = parseInt(params.digits, 10);
+      const period = parseInt(params.period, 10);
 
       const result = {
         type,
-        name: name || issuer || '未命名',
-        issuer: issuer,
-        secret: params.secret.toUpperCase(),
+        name: (name || issuer || '未命名').trim(),
+        issuer,
+        secret: secretRaw.toUpperCase(),
         algorithm: (params.algorithm || 'SHA1').toUpperCase(),
-        digits: parseInt(params.digits) || 6,
-        period: parseInt(params.period) || 30
+        digits: Number.isFinite(digits) && digits > 0 ? digits : 6,
+        period: Number.isFinite(period) && period > 0 ? period : 30
       };
 
-      // HOTP 需要 counter
       if (type === 'hotp') {
-        result.counter = parseInt(params.counter) || 0;
+        const counter = parseInt(params.counter, 10);
+        result.counter = Number.isFinite(counter) && counter >= 0 ? counter : 0;
       }
 
       return result;
@@ -235,6 +274,20 @@
 
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => document.querySelectorAll(sel);
+  const CLIPBOARD_DEBUG_TAG = '[ClipboardDebug]';
+
+  function maskClipboardPreview(text) {
+    if (typeof text !== 'string') return text;
+    let masked = text.replace(/(secret=)[^&\s]+/ig, '$1***');
+    if (masked.length > 120) {
+      masked = masked.slice(0, 120) + '...';
+    }
+    return masked;
+  }
+
+  function logClipboardDebug(step, payload = {}) {
+    console.log(CLIPBOARD_DEBUG_TAG, step, payload);
+  }
 
   // ==================== UI 渲染 ====================
 
@@ -437,6 +490,12 @@
     $$('.nav-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.view === view);
     });
+
+    // 管理页不显示排序控件
+    const sortSelect = $('#sortSelect');
+    if (sortSelect) {
+      sortSelect.style.display = view === 'home' ? '' : 'none';
+    }
 
     // 更新视图显示 - 带动画
     $$('.view').forEach(v => {
@@ -666,28 +725,72 @@
   }
 
   // 从剪贴板粘贴并解析
-  async function handlePaste() {
+  async function handlePaste(source = 'unknown') {
     try {
+      logClipboardDebug('handlePaste:start', {
+        source,
+        hasBridge: !!window.utoolsBridge,
+        hasBridgeGetClipboardText: !!(window.utoolsBridge && window.utoolsBridge.getClipboardText),
+        hasNavigatorClipboard: !!(navigator.clipboard && navigator.clipboard.readText)
+      });
+
       // 优先使用 utools bridge
       let text = null;
       if (window.utoolsBridge && window.utoolsBridge.getClipboardText) {
-        text = window.utoolsBridge.getClipboardText();
+        logClipboardDebug('handlePaste:bridge:invoke');
+        const clipboardResult = window.utoolsBridge.getClipboardText();
+        logClipboardDebug('handlePaste:bridge:return', {
+          returnType: typeof clipboardResult,
+          isPromise: !!(clipboardResult && typeof clipboardResult.then === 'function')
+        });
+        text = (clipboardResult && typeof clipboardResult.then === 'function')
+          ? await clipboardResult
+          : clipboardResult;
+        logClipboardDebug('handlePaste:bridge:resolved', {
+          textType: typeof text,
+          textPreview: maskClipboardPreview(text)
+        });
       }
-      if (!text && navigator.clipboard) {
+      if ((typeof text !== 'string' || !text) && navigator.clipboard) {
+        logClipboardDebug('handlePaste:navigator:fallback:invoke');
         text = await navigator.clipboard.readText();
+        logClipboardDebug('handlePaste:navigator:fallback:resolved', {
+          textType: typeof text,
+          textPreview: maskClipboardPreview(text)
+        });
       }
-      if (!text) return null;
+      if (typeof text !== 'string') {
+        logClipboardDebug('handlePaste:abort:not-string', { textType: typeof text });
+        return null;
+      }
 
       const trimmed = text.trim();
+      if (!trimmed) {
+        logClipboardDebug('handlePaste:abort:empty-string');
+        return null;
+      }
 
       // 尝试解析 otpauth URL
       const parsed = parseOtpauthUrl(trimmed);
       if (parsed) {
+        logClipboardDebug('handlePaste:parsed:success', {
+          name: parsed.name,
+          issuer: parsed.issuer,
+          type: parsed.type
+        });
         return parsed;
       }
 
+      logClipboardDebug('handlePaste:parsed:failed', {
+        trimmedPreview: maskClipboardPreview(trimmed)
+      });
       return null;
     } catch (e) {
+      logClipboardDebug('handlePaste:error', {
+        name: e && e.name ? e.name : 'Error',
+        message: e && e.message ? e.message : String(e),
+        stack: e && e.stack ? e.stack : ''
+      });
       console.error('Paste error:', e);
       return null;
     }
@@ -715,7 +818,7 @@
 
   // 检测剪贴板并自动填写
   async function checkClipboardAndShowHint() {
-    const parsed = await handlePaste();
+    const parsed = await handlePaste('checkClipboardAndShowHint');
     const hint = $('#clipboardHint');
 
     if (parsed) {
@@ -730,6 +833,9 @@
       hint.style.display = 'none';
     }
 
+    logClipboardDebug('checkClipboardAndShowHint:done', {
+      parsed: !!parsed
+    });
     return parsed;
   }
 
@@ -743,8 +849,59 @@
         showToast('已导入: ' + (parsed.name || parsed.issuer), 'success');
       }
     } catch (e) {
+      logClipboardDebug('applyClipboardImport:error', {
+        message: e && e.message ? e.message : String(e)
+      });
       console.error('导入失败:', e);
     }
+  }
+
+  async function debugClipboard() {
+    const result = {
+      hasBridge: !!window.utoolsBridge,
+      hasNavigatorClipboard: !!(navigator.clipboard && navigator.clipboard.readText)
+    };
+
+    try {
+      if (window.utoolsBridge && window.utoolsBridge.debugClipboardSnapshot) {
+        result.bridgeSnapshot = await window.utoolsBridge.debugClipboardSnapshot();
+      } else if (window.utoolsBridge && window.utoolsBridge.getClipboardText) {
+        const bridgeValue = window.utoolsBridge.getClipboardText();
+        const bridgeText = (bridgeValue && typeof bridgeValue.then === 'function')
+          ? await bridgeValue
+          : bridgeValue;
+        result.bridgeGetClipboardText = {
+          type: typeof bridgeText,
+          preview: maskClipboardPreview(bridgeText)
+        };
+      }
+    } catch (e) {
+      result.bridgeError = e && e.message ? e.message : String(e);
+    }
+
+    try {
+      if (navigator.clipboard && navigator.clipboard.readText) {
+        const navText = await navigator.clipboard.readText();
+        result.navigatorReadText = {
+          type: typeof navText,
+          preview: maskClipboardPreview(navText)
+        };
+      }
+    } catch (e) {
+      result.navigatorError = e && e.message ? e.message : String(e);
+    }
+
+    try {
+      const parsed = await handlePaste('manual-debug');
+      result.parsed = parsed
+        ? { name: parsed.name, issuer: parsed.issuer, type: parsed.type }
+        : null;
+    } catch (e) {
+      result.handlePasteError = e && e.message ? e.message : String(e);
+    }
+
+    logClipboardDebug('manual-debug:result', result);
+    return result;
   }
 
   // 尝试从图片识别二维码
@@ -802,7 +959,8 @@
       $('#addDialog').showModal();
 
       // 自动尝试从剪贴板读取
-      await handlePaste();
+      const parsed = await handlePaste('addFirstBtn');
+      if (parsed) applyParsedData(parsed);
     });
 
     // 关闭弹窗
@@ -817,7 +975,16 @@
     });
 
     // 粘贴按钮
-    $('#pasteBtn').addEventListener('click', handlePaste);
+    $('#pasteBtn').addEventListener('click', async (e) => {
+      logClipboardDebug('pasteBtn:click', {
+        isTrusted: e.isTrusted
+      });
+      const parsed = await handlePaste('pasteBtn');
+      logClipboardDebug('pasteBtn:result', { parsed: !!parsed });
+      if (parsed) {
+        applyParsedData(parsed);
+      }
+    });
 
     // 表单提交
     $('#addForm').addEventListener('submit', async (e) => {
@@ -913,7 +1080,8 @@
     switchView,
     toggleTheme,
     showContextMenu,
-    testTOTP  // 用于测试 TOTP 生成是否正确
+    testTOTP,  // 用于测试 TOTP 生成是否正确
+    debugClipboard
   };
 
 })();
