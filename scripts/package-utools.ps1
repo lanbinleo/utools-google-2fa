@@ -7,6 +7,18 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# Blacklist mode: copy everything except excluded files/dirs.
+$blacklistDirs = @(
+  ".git",
+  ".utools-package",
+  "dist",
+  "docs",
+  "scripts"
+)
+$blacklistFiles = @(
+  ".gitignore"
+)
+
 function Get-GitConfigValue {
   param([string]$Key)
 
@@ -57,14 +69,14 @@ function Get-WatermarkHeader {
 
   $ext = [System.IO.Path]::GetExtension($RelativePath).ToLowerInvariant()
   switch ($ext) {
-    ".html" { return "<!--`r`n$Body`r`n-->`r`n" }
-    ".css" { return "/*`r`n$Body`r`n*/`r`n" }
-    ".js" { return "/*`r`n$Body`r`n*/`r`n" }
+    ".html" { return "<!--`r`n$Body`r`n-->`r`n`n" }
+    ".css" { return "/*`r`n$Body`r`n*/`r`n`n" }
+    ".js" { return "/*`r`n$Body`r`n*/`r`n`n" }
     default { return "" }
   }
 }
 
-function Prepend-FileTextUtf8NoBom {
+function Set-FileTextWithPrefixUtf8NoBom {
   param(
     [string]$Path,
     [string]$Prefix
@@ -83,18 +95,6 @@ $projectRoot = Split-Path -Parent $PSScriptRoot
 $outputPath = Join-Path $projectRoot $OutputDir
 $templatePath = Join-Path $PSScriptRoot "watermark.template.txt"
 $versionPath = Join-Path $projectRoot "VERSION"
-
-# Blacklist mode: copy everything except excluded files/dirs.
-$blacklistDirs = @(
-  ".git",
-  ".utools-package",
-  "dist",
-  "docs",
-  "scripts"
-)
-$blacklistFiles = @(
-  ".gitignore"
-)
 
 if (-not (Test-Path $templatePath)) {
   throw "Watermark template not found: $templatePath"
@@ -185,7 +185,7 @@ foreach ($relativePath in $watermarkTargets) {
 
   $header = Get-WatermarkHeader -RelativePath $relativePath -Body $watermarkBody
   if (-not [string]::IsNullOrWhiteSpace($header)) {
-    Prepend-FileTextUtf8NoBom -Path $targetPath -Prefix $header
+    Set-FileTextWithPrefixUtf8NoBom -Path $targetPath -Prefix $header
   }
 }
 
