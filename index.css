@@ -54,7 +54,7 @@ html, body {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  padding: 16px;
+  padding: 16px 16px 0;
   gap: 12px;
   max-width: 1200px;
   margin: 0 auto;
@@ -206,7 +206,7 @@ html, body {
   min-height: 0;
   gap: 12px;
   overflow-y: auto;
-  padding-bottom: 20px;
+  padding-bottom: 0;
 }
 
 /* 验证码卡片 */
@@ -344,7 +344,7 @@ html, body {
   min-height: 0;
   gap: 8px;
   overflow-y: auto;
-  padding-bottom: 20px;
+  padding-bottom: 0;
 }
 
 /* 验证码列表滚动条：与页面背景融合，不影响弹窗滚动条 */
