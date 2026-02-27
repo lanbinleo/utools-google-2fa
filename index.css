@@ -144,11 +144,13 @@ html, body {
   display: flex;
   gap: 10px;
   align-items: center;
+  min-width: 0;
 }
 
 .search {
-  flex: 0 0 220px;
-  max-width: 260px;
+  flex: 1 1 auto;
+  min-width: 120px;
+  max-width: none;
   padding: 10px 14px;
   border: 1px solid var(--border);
   background: var(--surface);
@@ -168,12 +170,15 @@ html, body {
 }
 
 .filter-tags {
-  flex: 1;
+  flex: 0 1 auto;
+  width: max-content;
+  max-width: 320px;
   min-width: 0;
   display: flex;
   align-items: center;
   gap: 6px;
   overflow-x: auto;
+  overflow-y: hidden;
   padding: 2px 0;
 }
 
@@ -216,6 +221,7 @@ html, body {
 }
 
 .sort-select {
+  flex: 0 0 auto;
   padding: 10px 14px;
   border: 1px solid var(--border);
   background: var(--surface);
@@ -534,15 +540,16 @@ html, body {
 }
 
 .manage-item-info {
-  flex: 1;
+  grid-column: 1;
   min-width: 0;
 }
 
 .manage-item-meta {
+  grid-column: 2;
   display: flex;
   align-items: center;
   gap: 6px;
-  justify-content: center;
+  justify-content: flex-end;
   flex-wrap: wrap;
 }
 
@@ -609,6 +616,8 @@ html, body {
 }
 
 .manage-item-actions {
+  grid-column: 3;
+  justify-self: end;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1187,10 +1196,13 @@ html, body {
   }
 
   .manage-item-meta {
+    grid-column: 1;
     justify-content: flex-start;
   }
 
   .manage-item-actions {
+    grid-column: 1;
+    justify-self: stretch;
     justify-content: flex-start;
   }
 
