@@ -351,7 +351,7 @@ html, body {
 .code-grid,
 .manage-list {
   scrollbar-width: thin;
-  scrollbar-color: var(--border) var(--bg);
+  scrollbar-color: var(--bg) var(--bg);
 }
 
 .code-grid::-webkit-scrollbar,
@@ -367,14 +367,14 @@ html, body {
 
 .code-grid::-webkit-scrollbar-thumb,
 .manage-list::-webkit-scrollbar-thumb {
-  background: var(--border);
+  background: var(--bg);
   border-radius: 999px;
   border: 2px solid var(--bg);
 }
 
 .code-grid::-webkit-scrollbar-thumb:hover,
 .manage-list::-webkit-scrollbar-thumb:hover {
-  background: var(--text-muted);
+  background: var(--bg);
 }
 
 .manage-item {
