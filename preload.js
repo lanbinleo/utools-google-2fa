@@ -2,6 +2,25 @@
 // 提供与 Node.js 和 uTools 的桥接
 
 const CLIPBOARD_DEBUG_TAG = '[ClipboardDebug/preload]';
+const CLIPBOARD_DEBUG_ENABLED = (() => {
+  try {
+    return localStorage.getItem('google2fa_debug_clipboard') === '1';
+  } catch (_) {
+    return false;
+  }
+})();
+
+function debugLog(...args) {
+  if (CLIPBOARD_DEBUG_ENABLED) {
+    console.log(...args);
+  }
+}
+
+function debugError(...args) {
+  if (CLIPBOARD_DEBUG_ENABLED) {
+    console.error(...args);
+  }
+}
 
 function maskClipboardPreview(text) {
   if (typeof text !== 'string') return text;
@@ -34,14 +53,14 @@ window.utoolsBridge = {
     try {
       const hasUtoolsClipboard = !!(window.utools && window.utools.clipboard);
       const hasNavigatorClipboard = !!(navigator.clipboard && navigator.clipboard.readText);
-      console.log(CLIPBOARD_DEBUG_TAG, 'getClipboardText called', {
+      debugLog(CLIPBOARD_DEBUG_TAG, 'getClipboardText called', {
         hasUtoolsClipboard,
         hasNavigatorClipboard
       });
 
       if (hasUtoolsClipboard) {
         const text = window.utools.clipboard.readText();
-        console.log(CLIPBOARD_DEBUG_TAG, 'utools.clipboard.readText result', {
+        debugLog(CLIPBOARD_DEBUG_TAG, 'utools.clipboard.readText result', {
           type: typeof text,
           preview: maskClipboardPreview(text)
         });
@@ -50,13 +69,13 @@ window.utoolsBridge = {
 
       // 浏览器环境降级
       const result = navigator.clipboard?.readText() || null;
-      console.log(CLIPBOARD_DEBUG_TAG, 'navigator.clipboard.readText result', {
+      debugLog(CLIPBOARD_DEBUG_TAG, 'navigator.clipboard.readText result', {
         type: typeof result,
         isPromise: !!(result && typeof result.then === 'function')
       });
       return result;
     } catch (e) {
-      console.error(CLIPBOARD_DEBUG_TAG, 'getClipboardText error', e);
+      debugError(CLIPBOARD_DEBUG_TAG, 'getClipboardText error', e);
       return null;
     }
   },
@@ -89,7 +108,7 @@ window.utoolsBridge = {
       snapshot.navigatorReadError = e && e.message ? e.message : String(e);
     }
 
-    console.log(CLIPBOARD_DEBUG_TAG, 'debugClipboardSnapshot', snapshot);
+    debugLog(CLIPBOARD_DEBUG_TAG, 'debugClipboardSnapshot', snapshot);
     return snapshot;
   },
 

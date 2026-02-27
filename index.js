@@ -128,7 +128,7 @@
   // 测试 TOTP - 可以用这个验证实现是否正确
   // Google 测试密钥: JBSWY3DPEHPK3PXP (secret)
   // 预期 TOTP (SHA1, 6位, 30秒): 需要实时验证
-  window.testTOTP = async function() {
+  const testTOTP = async function() {
     const testSecret = 'JBSWY3DPEHPK3PXP'; // Google 官方测试密钥
     try {
       const code = await generateTOTP(testSecret);
@@ -278,6 +278,13 @@
   const $ = (sel) => document.querySelector(sel);
   const $$ = (sel) => document.querySelectorAll(sel);
   const CLIPBOARD_DEBUG_TAG = '[ClipboardDebug]';
+  const CLIPBOARD_DEBUG_ENABLED = (() => {
+    try {
+      return localStorage.getItem('google2fa_debug_clipboard') === '1';
+    } catch (_) {
+      return false;
+    }
+  })();
 
   function maskClipboardPreview(text) {
     if (typeof text !== 'string') return text;
@@ -289,6 +296,7 @@
   }
 
   function logClipboardDebug(step, payload = {}) {
+    if (!CLIPBOARD_DEBUG_ENABLED) return;
     console.log(CLIPBOARD_DEBUG_TAG, step, payload);
   }
 
@@ -851,7 +859,9 @@
         message: e && e.message ? e.message : String(e),
         stack: e && e.stack ? e.stack : ''
       });
-      console.error('Paste error:', e);
+      if (CLIPBOARD_DEBUG_ENABLED) {
+        console.error('Paste error:', e);
+      }
       return null;
     }
   }
@@ -1209,9 +1219,12 @@
     switchView,
     toggleTheme,
     showContextMenu,
-    testTOTP,  // 用于测试 TOTP 生成是否正确
-    debugClipboard,
     openImportMenu
   };
+
+  if (CLIPBOARD_DEBUG_ENABLED) {
+    window.app.testTOTP = testTOTP;
+    window.app.debugClipboard = debugClipboard;
+  }
 
 })();
