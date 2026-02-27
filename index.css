@@ -180,15 +180,37 @@ html, body {
   overflow-x: auto;
   overflow-y: hidden;
   padding: 2px 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) var(--bg);
 }
 
 .filter-tags::-webkit-scrollbar {
-  height: 6px;
+  height: 10px;
+  background-color: var(--bg);
+}
+
+.filter-tags::-webkit-scrollbar-track {
+  background-color: var(--bg);
+}
+
+.filter-tags::-webkit-scrollbar-track-piece {
+  background-color: var(--bg);
+}
+
+.filter-tags::-webkit-scrollbar-corner {
+  background-color: var(--bg);
+}
+
+.filter-tags::-webkit-scrollbar-button {
+  width: 0;
+  height: 0;
+  background-color: var(--bg);
 }
 
 .filter-tags::-webkit-scrollbar-thumb {
   background: var(--border);
   border-radius: 999px;
+  border: 2px solid var(--bg);
 }
 
 .filter-chip {
