@@ -535,6 +535,20 @@
     syncOtpTypeVisibility();
   }
 
+  function openImportMenu() {
+    const importMenu = $('#importMenuDialog');
+    if (importMenu && !importMenu.open) {
+      importMenu.showModal();
+    }
+  }
+
+  function closeImportMenu() {
+    const importMenu = $('#importMenuDialog');
+    if (importMenu && importMenu.open) {
+      importMenu.close();
+    }
+  }
+
   // 切换视图
   function switchView(view) {
     currentView = view;
@@ -1007,6 +1021,44 @@
       markAddDialogClean();
     });
 
+    // 导入菜单
+    $('#closeImportMenu')?.addEventListener('click', closeImportMenu);
+    $('#importMenuDialog')?.addEventListener('cancel', (e) => {
+      e.preventDefault();
+      closeImportMenu();
+    });
+
+    $('#importOtpauthBtn')?.addEventListener('click', async () => {
+      closeImportMenu();
+      prepareCreateDialog();
+      $('#addDialog').showModal();
+      await checkClipboardAndShowHint();
+      markAddDialogClean();
+      $('#secretInput')?.focus();
+    });
+
+    $('#importQrBtn')?.addEventListener('click', () => {
+      showToast('屏幕二维码导入即将上线', 'error');
+      closeImportMenu();
+    });
+
+    $('#importJsonBtn')?.addEventListener('click', () => {
+      showToast('JSON 导入即将上线', 'error');
+      closeImportMenu();
+    });
+
+    $('#qrFileInput')?.addEventListener('change', async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async () => {
+        await handleQrFromImage(reader.result);
+        e.target.value = '';
+      };
+      reader.readAsDataURL(file);
+      closeImportMenu();
+    });
+
     // 一键导入按钮
     $('#applyClipboardBtn')?.addEventListener('click', applyClipboardImport);
 
@@ -1142,7 +1194,8 @@
     toggleTheme,
     showContextMenu,
     testTOTP,  // 用于测试 TOTP 生成是否正确
-    debugClipboard
+    debugClipboard,
+    openImportMenu
   };
 
 })();
