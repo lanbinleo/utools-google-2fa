@@ -1066,11 +1066,6 @@
         counter: parseInt($('#counterInput')?.value) || 0
       };
 
-      if (!data.name) {
-        showToast('请输入名称', 'error');
-        return;
-      }
-
       if (!data.secret) {
         showToast('请输入密钥', 'error');
         return;
@@ -1087,6 +1082,11 @@
         data.type = parsed.type;
         data.period = parsed.period;
         if (parsed.counter !== undefined) data.counter = parsed.counter;
+      }
+
+      if (!data.name) {
+        showToast('请输入名称', 'error');
+        return;
       }
 
       const success = await saveEntry(data);
