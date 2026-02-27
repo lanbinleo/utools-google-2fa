@@ -357,6 +357,7 @@ html, body {
 .code-grid::-webkit-scrollbar,
 .manage-list::-webkit-scrollbar {
   width: 10px;
+  background: var(--bg);
 }
 
 .code-grid::-webkit-scrollbar-track,
