@@ -480,6 +480,7 @@
     }
 
     filtered = [...filtered].sort((a, b) => {
+      if (!!a.deprecated !== !!b.deprecated) return a.deprecated ? 1 : -1;
       const pinOrder = byPinnedThenPinnedAtDesc(a, b);
       if (pinOrder !== 0) return pinOrder;
       return (a.name || '').localeCompare(b.name || '');
@@ -491,7 +492,7 @@
     }
 
     list.innerHTML = filtered.map(entry => `
-      <div class="manage-item" data-id="${entry.id}">
+      <div class="manage-item ${entry.deprecated ? 'deprecated-state' : ''}" data-id="${entry.id}">
         <div class="manage-item-info">
           <div class="manage-item-name">${escapeHtml(entry.name || '未命名')}</div>
           <div class="manage-item-issuer">${escapeHtml(entry.issuer || '')}</div>

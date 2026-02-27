@@ -205,6 +205,8 @@ html, body {
   height: 100%;
   min-height: 0;
   gap: 12px;
+  align-content: start;
+  align-items: start;
   overflow-y: auto;
   padding-bottom: 0;
 }
@@ -460,6 +462,20 @@ html, body {
 
 .manage-item:hover {
   border-color: var(--accent);
+}
+
+.manage-item.deprecated-state {
+  background: var(--danger-light);
+  border-color: var(--danger);
+}
+
+.manage-item.deprecated-state:hover {
+  border-color: var(--danger);
+}
+
+.manage-item.deprecated-state .manage-item-name,
+.manage-item.deprecated-state .manage-item-issuer {
+  color: var(--text-secondary);
 }
 
 .manage-list .manage-item:last-child {
