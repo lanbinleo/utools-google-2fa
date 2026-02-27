@@ -88,6 +88,14 @@ localStorage.removeItem('google2fa_debug_clipboard')
 - 首页与管理页滚动区域已做独立滚动处理
 - 对话框支持 `ESC/关闭按钮` 关闭，并带未保存确认
 
+## 打包说明
+
+- 执行：`powershell -ExecutionPolicy Bypass -File scripts/package-utools.ps1`
+- 输出目录：`dist/`（已在 `.gitignore` 忽略）
+- 脚本为黑名单模式复制（自动排除 `.git`、`scripts`、`docs` 等）
+- 版本号读取根目录 `VERSION`
+- 水印模板：`scripts/watermark.template.txt`（占位符 `{{AUTHOR}}`、`{{SOURCE_URL}}`、`{{VERSION}}`、`{{BUILD_TIME_UTC}}`）
+
 ## Roadmap
 
 下一步计划：

@@ -1,0 +1,5 @@
+Google 2FA (uTools Plugin)
+Author: {{AUTHOR}}
+Open Source: {{SOURCE_URL}}
+Version: {{VERSION}}
+Build Time: {{BUILD_TIME_UTC}}
