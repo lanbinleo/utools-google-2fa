@@ -10,6 +10,7 @@
 - 支持 `6/7/8` 位验证码、周期与计数器配置
 - 支持 `otpauth://` 链接解析与导入
 - 支持剪贴板检测（文本/图片二维码，显式确认后导入）
+- 支持图片二维码识别（`BarcodeDetector` + `jsQR fallback`）
 - 支持右键操作：复制、编辑、删除
 - 支持搜索（名称/发行方/标签）与排序
 - 支持 `Tags`、`置顶`、`弃用` 管理
@@ -26,7 +27,7 @@
 ### 剪贴板导入
 
 - 打开新增弹窗后，会优先检测剪贴板中的 `otpauth://` 文本
-- 若剪贴板是图片，会尝试识别二维码并解析 `otpauth://`
+- 若剪贴板是图片，会尝试识别二维码并解析 `otpauth://`（uTools 下默认走 `jsQR`）
 - 仅提示，不会自动覆盖表单
 - 点击 `导入到表单` 后才会应用
 
@@ -59,6 +60,13 @@
 localStorage.setItem('google2fa_debug_clipboard', '1')
 ```
 
+开启后可在控制台执行：
+
+```js
+await window.app.debugClipboard()
+await window.app.debugQrImport()
+```
+
 关闭：
 
 ```js
@@ -71,6 +79,7 @@ localStorage.removeItem('google2fa_debug_clipboard')
 - `index.css`：样式与动画
 - `index.js`：核心逻辑（OTP、渲染、交互）
 - `preload.js`：uTools/Node 桥接
+- `vendor/jsQR.js`：二维码识别 fallback 库
 - `plugin.json`：插件配置
 
 ## 开发说明
