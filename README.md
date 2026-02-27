@@ -82,6 +82,11 @@ localStorage.removeItem('google2fa_debug_clipboard')
 - `vendor/jsQR.js`：二维码识别 fallback 库
 - `plugin.json`：插件配置
 
+## 开发文档
+
+- `docs/dev-context.md`：HTML/JS/CSS 分段与主要函数索引
+- `docs/migration-v1-design.md`：迁移页面 v1 设计与迭代计划
+
 ## 开发说明
 
 - 插件窗口高度当前配置为 `550`（见 `plugin.json`）
