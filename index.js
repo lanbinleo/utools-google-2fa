@@ -251,9 +251,35 @@
   const STORAGE_KEY = 'google2fa_entries';
   const THEME_KEY = 'google2fa_theme';
 
+  function normalizeTags(tags) {
+    if (!Array.isArray(tags)) return [];
+    const normalized = tags
+      .map(tag => (tag == null ? '' : String(tag)).trim())
+      .filter(Boolean);
+    return Array.from(new Set(normalized)).slice(0, 10);
+  }
+
+  function normalizeEntry(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const pinned = !!raw.pinned;
+    const pinnedAt = pinned
+      ? (Number.isFinite(raw.pinnedAt) && raw.pinnedAt > 0
+        ? raw.pinnedAt
+        : (Number.isFinite(raw.lastUsed) ? raw.lastUsed : Date.now()))
+      : 0;
+    return {
+      ...raw,
+      tags: normalizeTags(raw.tags),
+      pinned,
+      pinnedAt,
+      deprecated: !!raw.deprecated
+    };
+  }
+
   function getEntries() {
     try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+      const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
+      return parsed.map(normalizeEntry).filter(Boolean);
     } catch (e) {
       return [];
     }
@@ -272,6 +298,7 @@
   let toastTimer = null;
   let addDialogInitialState = null;
   let addDialogEscapeRequested = false;
+  let selectedTags = [];
 
   // ==================== DOM 元素 ====================
 
@@ -315,12 +342,57 @@
     });
   }
 
+  function renderTagBadges(tags, maxCount = 2) {
+    const safeTags = normalizeTags(tags);
+    if (!safeTags.length) return '';
+    const visible = safeTags.slice(0, maxCount).map(tag =>
+      `<span class="tag-badge" title="${escapeHtml(tag)}">${escapeHtml(tag)}</span>`
+    ).join('');
+    const extra = safeTags.length > maxCount
+      ? `<span class="tag-badge tag-badge-muted">+${safeTags.length - maxCount}</span>`
+      : '';
+    return visible + extra;
+  }
+
+  function byPinnedThenPinnedAtDesc(a, b) {
+    if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+    if (a.pinned && b.pinned) return (b.pinnedAt || 0) - (a.pinnedAt || 0);
+    return 0;
+  }
+
   // 渲染首页验证码卡片
   function renderHomeView() {
     const grid = $('#codeGrid');
     const empty = $('#emptyState');
+    const visibleEntries = entries.filter(e => !e.deprecated);
 
-    if (entries.length === 0) {
+    // 排序
+    const sortType = $('#sortSelect').value;
+    let sorted = [...visibleEntries];
+
+    // 搜索过滤
+    const searchTerm = $('#searchInput').value.toLowerCase();
+    if (searchTerm) {
+      sorted = sorted.filter(e =>
+        (e.name || '').toLowerCase().includes(searchTerm) ||
+        (e.issuer || '').toLowerCase().includes(searchTerm) ||
+        (normalizeTags(e.tags).join(' ').toLowerCase().includes(searchTerm))
+      );
+    }
+
+    const secondarySort = {
+      name: (a, b) => (a.name || '').localeCompare(b.name || ''),
+      recent: (a, b) => (b.lastUsed || 0) - (a.lastUsed || 0),
+      default: (a, b) => (b.lastUsed || 0) - (a.lastUsed || 0)
+    }[sortType] || ((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0));
+
+    sorted.sort((a, b) => {
+      const pinOrder = byPinnedThenPinnedAtDesc(a, b);
+      if (pinOrder !== 0) return pinOrder;
+      return secondarySort(a, b);
+    });
+
+    if (sorted.length === 0) {
       grid.innerHTML = '';
       empty.classList.add('show');
       return;
@@ -328,37 +400,21 @@
 
     empty.classList.remove('show');
 
-    // 排序
-    const sortType = $('#sortSelect').value;
-    let sorted = [...entries];
-
-    // 搜索过滤
-    const searchTerm = $('#searchInput').value.toLowerCase();
-    if (searchTerm) {
-      sorted = sorted.filter(e =>
-        (e.name || '').toLowerCase().includes(searchTerm) ||
-        (e.issuer || '').toLowerCase().includes(searchTerm)
-      );
-    }
-
-    switch (sortType) {
-      case 'name':
-        sorted.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-        break;
-      case 'recent':
-        sorted.sort((a, b) => (b.lastUsed || 0) - (a.lastUsed || 0));
-        break;
-      default:
-        // 默认：置顶 > 常用
-        sorted.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0));
-    }
-
     grid.innerHTML = sorted.map(entry => {
       const name = entry.name || '未命名';
       const issuer = entry.issuer || '';
       const period = entry.period || 30;
       const seconds = Math.floor(Date.now() / 1000) % period;
       const progress = ((period - seconds) / period) * 100;
+      const pinBadge = entry.pinned ? `
+        <span class="pin-indicator" title="已置顶" aria-label="已置顶">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><g id="SVGRepo_bgCarrier" stroke-width="0"></g><g id="SVGRepo_tracerCarrier" stroke-linecap="round" stroke-linejoin="round"></g><g id="SVGRepo_iconCarrier"> <path d="M15.9894 4.9502L16.52 4.42014L16.52 4.42014L15.9894 4.9502ZM8.73845 19.429L8.20785 19.9591L8.73845 19.429ZM4.62176 15.3081L5.15236 14.7781L4.62176 15.3081ZM17.567 14.9943L17.3032 14.2922L17.567 14.9943ZM15.6499 15.7146L15.9137 16.4167L15.6499 15.7146ZM8.33227 8.38177L7.62805 8.12375H7.62805L8.33227 8.38177ZM9.02673 6.48636L9.73095 6.74438L9.02673 6.48636ZM5.84512 10.6735L6.04445 11.3965H6.04445L5.84512 10.6735ZM7.30174 10.1351L6.86354 9.52646L6.86354 9.52646L7.30174 10.1351ZM7.6759 9.79038L8.24673 10.2768H8.24673L7.6759 9.79038ZM14.2511 16.3805L14.7421 16.9475L14.7421 16.9475L14.2511 16.3805ZM13.3807 18.2012L12.6575 18.0022V18.0022L13.3807 18.2012ZM13.917 16.7466L13.3076 16.3094L13.3076 16.3094L13.917 16.7466ZM2.71854 12.7552L1.96855 12.76V12.76L2.71854 12.7552ZM2.93053 11.9521L2.28061 11.5778H2.28061L2.93053 11.9521ZM11.3053 21.3431L11.3064 20.5931H11.3064L11.3053 21.3431ZM12.0933 21.1347L11.7216 20.4833L11.7216 20.4833L12.0933 21.1347ZM21.9652 12.3049L22.6983 12.4634L21.9652 12.3049ZM11.6973 2.03606L11.8589 2.76845L11.6973 2.03606ZM22.3552 10.6303C22.1511 10.2699 21.6934 10.1433 21.333 10.3475C20.9726 10.5516 20.846 11.0093 21.0502 11.3697L22.3552 10.6303ZM18.006 8.03006C18.2988 8.3231 18.7737 8.32334 19.0667 8.0306C19.3597 7.73786 19.36 7.26298 19.0672 6.96994L18.006 8.03006ZM9.26905 18.8989L5.15236 14.7781L4.09116 15.8382L8.20785 19.9591L9.26905 18.8989ZM17.3032 14.2922L15.3861 15.0125L15.9137 16.4167L17.8308 15.6964L17.3032 14.2922ZM9.03649 8.63979L9.73095 6.74438L8.32251 6.22834L7.62805 8.12375L9.03649 8.63979ZM6.04445 11.3965C6.75591 11.2003 7.29726 11.0625 7.73995 10.7438L6.86354 9.52646C6.6906 9.65097 6.46608 9.72428 5.64578 9.95044L6.04445 11.3965ZM7.62805 8.12375C7.3351 8.92332 7.24345 9.14153 7.10507 9.30391L8.24673 10.2768C8.60048 9.86175 8.78237 9.33337 9.03649 8.63979L7.62805 8.12375ZM7.73995 10.7438C7.92704 10.6091 8.09719 10.4523 8.24673 10.2768L7.10507 9.30391C7.03377 9.38757 6.95268 9.46229 6.86354 9.52646L7.73995 10.7438ZM15.3861 15.0125C14.697 15.2714 14.1717 15.4571 13.7601 15.8135L14.7421 16.9475C14.9029 16.8082 15.1193 16.7152 15.9137 16.4167L15.3861 15.0125ZM14.1038 18.4001C14.3291 17.5813 14.4022 17.3569 14.5263 17.1838L13.3076 16.3094C12.9903 16.7517 12.853 17.2919 12.6575 18.0022L14.1038 18.4001ZM13.7601 15.8135C13.5904 15.9605 13.4385 16.1269 13.3076 16.3094L14.5263 17.1838C14.5888 17.0968 14.6612 17.0175 14.7421 16.9475L13.7601 15.8135ZM5.15236 14.7781C4.50623 14.1313 4.06806 13.691 3.78374 13.3338C3.49842 12.9753 3.46896 12.8201 3.46852 12.7505L1.96855 12.76C1.97223 13.3422 2.26135 13.8297 2.6101 14.2679C2.95984 14.7073 3.47123 15.2176 4.09116 15.8382L5.15236 14.7781ZM5.64578 9.95044C4.80056 10.1835 4.10403 10.3743 3.58304 10.5835C3.06349 10.792 2.57124 11.0732 2.28061 11.5778L3.58045 12.3264C3.61507 12.2663 3.717 12.146 4.14187 11.9755C4.56531 11.8055 5.16345 11.6394 6.04445 11.3965L5.64578 9.95044ZM3.46852 12.7505C3.46758 12.6016 3.50623 12.4553 3.58045 12.3264L2.28061 11.5778C2.07362 11.9372 1.96593 12.3452 1.96855 12.76L3.46852 12.7505ZM8.20785 19.9591C8.83172 20.5836 9.34472 21.0987 9.78654 21.4506C10.2271 21.8015 10.718 22.0922 11.3042 22.0931L11.3064 20.5931C11.237 20.593 11.0815 20.5644 10.7211 20.2773C10.3619 19.9912 9.91931 19.5499 9.26905 18.8989L8.20785 19.9591ZM12.6575 18.0022C12.4133 18.8897 12.2463 19.4924 12.0752 19.9188C11.9034 20.3467 11.7822 20.4487 11.7216 20.4833L12.4651 21.7861C12.9741 21.4956 13.2573 21.0004 13.4672 20.4775C13.6777 19.9532 13.8695 19.2516 14.1038 18.4001L12.6575 18.0022ZM11.3042 22.0931C11.7113 22.0937 12.1115 21.9879 12.4651 21.7861L11.7216 20.4833C11.5951 20.5555 11.452 20.5933 11.3064 20.5931L11.3042 22.0931ZM17.8308 15.6964C19.1922 15.1849 20.2941 14.773 21.0771 14.3384C21.8719 13.8973 22.5084 13.3416 22.6983 12.4634L21.2322 12.1464C21.178 12.3968 21.0002 12.6655 20.3492 13.0268C19.6865 13.3946 18.7113 13.7632 17.3032 14.2922L17.8308 15.6964ZM16.52 4.42014C15.4841 3.3832 14.6481 2.54353 13.9246 2.00638C13.1909 1.46165 12.4175 1.10912 11.5357 1.30367L11.8589 2.76845C12.1086 2.71335 12.4278 2.7633 13.0305 3.21075C13.6434 3.66579 14.3877 4.40801 15.4588 5.48026L16.52 4.42014ZM9.73095 6.74438C10.2526 5.32075 10.6162 4.33403 10.9813 3.66315C11.3403 3.00338 11.6091 2.82357 11.8589 2.76845L11.5357 1.30367C10.6541 1.49819 10.1006 2.14332 9.6637 2.94618C9.23286 3.73793 8.82695 4.85154 8.32251 6.22834L9.73095 6.74438ZM21.0502 11.3697C21.2515 11.7251 21.2745 11.9507 21.2322 12.1464L22.6983 12.4634C22.8404 11.8064 22.6796 11.2027 22.3552 10.6303L21.0502 11.3697ZM15.4588 5.48026L18.006 8.03006L19.0672 6.96994L16.52 4.42014L15.4588 5.48026Z" fill="currentColor"></path> <path d="M1.4694 21.4697C1.17666 21.7627 1.1769 22.2376 1.46994 22.5304C1.76298 22.8231 2.23786 22.8229 2.5306 22.5298L1.4694 21.4697ZM7.18383 17.8719C7.47657 17.5788 7.47633 17.1039 7.18329 16.8112C6.89024 16.5185 6.41537 16.5187 6.12263 16.8117L7.18383 17.8719ZM2.5306 22.5298L7.18383 17.8719L6.12263 16.8117L1.4694 21.4697L2.5306 22.5298Z" fill="currentColor"></path> </g></svg>
+        </span>
+      ` : '';
+      const tagBadges = renderTagBadges(entry.tags, 1);
+      const headerBadges = pinBadge || tagBadges
+        ? `<div class="code-badges">${pinBadge}${tagBadges}</div>`
+        : '';
 
       // 存储数据在 data 属性中
       const dataAttrs = `data-id="${entry.id}"
@@ -376,6 +432,7 @@
               <div class="code-name">${escapeHtml(name)}</div>
               ${issuer ? `<div class="code-issuer">${escapeHtml(issuer)}</div>` : ''}
             </div>
+            ${headerBadges}
           </div>
           <div class="code-value-row">
             <div class="code-value" data-secret="${escapeHtml(entry.secret)}"
@@ -417,9 +474,16 @@
     if (searchTerm) {
       filtered = entries.filter(e =>
         (e.name || '').toLowerCase().includes(searchTerm) ||
-        (e.issuer || '').toLowerCase().includes(searchTerm)
+        (e.issuer || '').toLowerCase().includes(searchTerm) ||
+        (normalizeTags(e.tags).join(' ').toLowerCase().includes(searchTerm))
       );
     }
+
+    filtered = [...filtered].sort((a, b) => {
+      const pinOrder = byPinnedThenPinnedAtDesc(a, b);
+      if (pinOrder !== 0) return pinOrder;
+      return (a.name || '').localeCompare(b.name || '');
+    });
 
     if (filtered.length === 0) {
       list.innerHTML = '<div class="empty-state show"><p>未找到匹配条目</p></div>';
@@ -431,6 +495,20 @@
         <div class="manage-item-info">
           <div class="manage-item-name">${escapeHtml(entry.name || '未命名')}</div>
           <div class="manage-item-issuer">${escapeHtml(entry.issuer || '')}</div>
+        </div>
+        <div class="manage-item-meta">
+          ${renderTagBadges(entry.tags, 2)}
+          ${entry.pinned ? '<span class="status-badge">已置顶</span>' : ''}
+          ${entry.deprecated ? '<span class="status-badge deprecated">已弃用</span>' : ''}
+        </div>
+        <div class="manage-item-actions">
+          <button type="button" class="mini-action ${entry.pinned ? 'active' : ''}" data-action="toggle-pin">
+            ${entry.pinned ? '取消置顶' : '置顶'}
+          </button>
+          <label class="mini-check ${entry.deprecated ? 'deprecated-active' : ''}" data-action="toggle-deprecated">
+            <input type="checkbox" data-action="toggle-deprecated" ${entry.deprecated ? 'checked' : ''}>
+            <span>弃用</span>
+          </label>
         </div>
       </div>
     `).join('');
@@ -494,7 +572,10 @@
       digits: $('#digitsInput')?.value || '6',
       type: $('#otpTypeInput')?.value || 'totp',
       period: $('#periodInput')?.value || '30',
-      counter: $('#counterInput')?.value || '0'
+      counter: $('#counterInput')?.value || '0',
+      pinned: Boolean($('#pinnedInput')?.checked),
+      deprecated: Boolean($('#deprecatedInput')?.checked),
+      tags: normalizeTags(selectedTags).join('|')
     };
   }
 
@@ -518,6 +599,84 @@
     return true;
   }
 
+  function getAllTags() {
+    return Array.from(new Set(
+      entries.flatMap(entry => normalizeTags(entry.tags))
+    )).sort((a, b) => a.localeCompare(b));
+  }
+
+  function setSelectedTags(tags) {
+    selectedTags = normalizeTags(tags);
+    renderSelectedTags();
+    renderTagSuggestions();
+  }
+
+  function renderSelectedTags() {
+    const container = $('#selectedTags');
+    if (!container) return;
+    container.innerHTML = selectedTags.map(tag => `
+      <span class="selected-chip" data-tag="${escapeHtml(tag)}">
+        ${escapeHtml(tag)}
+        <button type="button" class="tag-remove" data-tag="${escapeHtml(tag)}" aria-label="移除标签">x</button>
+      </span>
+    `).join('');
+  }
+
+  function renderTagSuggestions(keyword = '') {
+    const container = $('#tagSuggestions');
+    if (!container) return;
+    const normalizedKeyword = (keyword || '').trim().toLowerCase();
+    const suggestions = getAllTags()
+      .filter(tag => !selectedTags.includes(tag))
+      .filter(tag => !normalizedKeyword || tag.toLowerCase().includes(normalizedKeyword))
+      .slice(0, 8);
+    container.innerHTML = suggestions.map(tag =>
+      `<button type="button" class="tag-chip" data-tag="${escapeHtml(tag)}">${escapeHtml(tag)}</button>`
+    ).join('');
+  }
+
+  function addTag(tag) {
+    const normalized = String(tag || '').trim();
+    if (!normalized) return;
+    if (selectedTags.includes(normalized)) return;
+    selectedTags = normalizeTags([...selectedTags, normalized]);
+    renderSelectedTags();
+    renderTagSuggestions();
+    const tagInput = $('#tagInput');
+    if (tagInput) tagInput.value = '';
+  }
+
+  function removeTag(tag) {
+    selectedTags = selectedTags.filter(item => item !== tag);
+    renderSelectedTags();
+    renderTagSuggestions();
+  }
+
+  function toggleEntryPinned(id) {
+    const entry = entries.find(e => e.id === id);
+    if (!entry) return;
+    if (entry.pinned) {
+      entry.pinned = false;
+      entry.pinnedAt = 0;
+      showToast('已取消置顶', 'success');
+    } else {
+      entry.pinned = true;
+      entry.pinnedAt = Date.now();
+      showToast('已置顶', 'success');
+    }
+    saveEntries(entries);
+    renderCurrentView();
+  }
+
+  function toggleEntryDeprecated(id) {
+    const entry = entries.find(e => e.id === id);
+    if (!entry) return;
+    entry.deprecated = !entry.deprecated;
+    showToast(entry.deprecated ? '已标记为弃用' : '已恢复启用', 'success');
+    saveEntries(entries);
+    renderCurrentView();
+  }
+
   function syncOtpTypeVisibility() {
     const counterLabel = $('#counterLabel');
     const otpType = $('#otpTypeInput')?.value || 'totp';
@@ -530,9 +689,12 @@
     editingId = null;
     $('#dialogTitle').textContent = '添加验证码';
     $('#addForm').reset();
+    $('#pinnedInput').checked = false;
+    $('#deprecatedInput').checked = false;
     $('#deleteBtn').style.display = 'none';
     $('#clipboardHint').style.display = 'none';
     delete $('#clipboardHint').dataset.parsed;
+    setSelectedTags([]);
     syncOtpTypeVisibility();
   }
 
@@ -659,7 +821,15 @@
 
   // 添加/编辑条目
   async function saveEntry(data) {
-    const entry = {
+    const existingEntry = entries.find(e => e.id === data.id);
+    const pinned = !!data.pinned;
+    const wasPinned = !!existingEntry?.pinned;
+    let pinnedAt = pinned ? (existingEntry?.pinnedAt || 0) : 0;
+    if (pinned && !wasPinned) pinnedAt = Date.now();
+    if (pinned && !pinnedAt) pinnedAt = Date.now();
+
+    const entry = normalizeEntry({
+      ...existingEntry,
       id: data.id || generateId(),
       name: data.name || '',
       issuer: data.issuer || '',
@@ -669,9 +839,12 @@
       type: data.type || 'totp',
       period: parseInt(data.period) || 30,
       counter: parseInt(data.counter) || 0,
-      pinned: data.pinned || false,
-      lastUsed: data.lastUsed || Date.now()
-    };
+      pinned,
+      pinnedAt,
+      deprecated: !!data.deprecated,
+      tags: normalizeTags(data.tags),
+      lastUsed: existingEntry?.lastUsed || data.lastUsed || Date.now()
+    });
 
     // 验证密钥
     try {
@@ -720,6 +893,9 @@
     $('#otpTypeInput').value = entry.type || 'totp';
     $('#periodInput').value = entry.period || 30;
     $('#counterInput').value = entry.counter || 0;
+    $('#pinnedInput').checked = !!entry.pinned;
+    $('#deprecatedInput').checked = !!entry.deprecated;
+    setSelectedTags(entry.tags || []);
     syncOtpTypeVisibility();
     $('#deleteBtn').style.display = 'block';
 
@@ -1008,6 +1184,7 @@
   function init() {
     // 加载数据
     entries = getEntries();
+    setSelectedTags([]);
 
     // 初始化主题
     initTheme();
@@ -1038,7 +1215,20 @@
       const item = e.target.closest('.manage-item');
       if (!item || !$('#manageList').contains(item)) return;
       const id = item.dataset.id;
-      if (id) editEntry(id);
+      if (!id) return;
+
+      const actionBtn = e.target.closest('[data-action]');
+      if (actionBtn && item.contains(actionBtn)) {
+        const action = actionBtn.dataset.action;
+        if (action === 'toggle-pin') {
+          toggleEntryPinned(id);
+        } else if (action === 'toggle-deprecated') {
+          toggleEntryDeprecated(id);
+        }
+        return;
+      }
+
+      editEntry(id);
     });
 
     $('#manageList')?.addEventListener('contextmenu', (e) => {
@@ -1111,6 +1301,34 @@
       markAddDialogClean();
     });
 
+    // 标签编辑
+    $('#addTagBtn')?.addEventListener('click', () => {
+      addTag($('#tagInput')?.value || '');
+    });
+
+    $('#tagInput')?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        addTag(e.target.value);
+      }
+    });
+
+    $('#tagInput')?.addEventListener('input', (e) => {
+      renderTagSuggestions(e.target.value);
+    });
+
+    $('#tagSuggestions')?.addEventListener('click', (e) => {
+      const chip = e.target.closest('.tag-chip');
+      if (!chip) return;
+      addTag(chip.dataset.tag);
+    });
+
+    $('#selectedTags')?.addEventListener('click', (e) => {
+      const removeBtn = e.target.closest('.tag-remove');
+      if (!removeBtn) return;
+      removeTag(removeBtn.dataset.tag);
+    });
+
     // 关闭弹窗
     $('#closeDialog').addEventListener('click', () => {
       closeAddDialogWithGuard();
@@ -1155,7 +1373,10 @@
         digits: parseInt($('#digitsInput').value),
         type: $('#otpTypeInput').value,
         period: parseInt($('#periodInput').value),
-        counter: parseInt($('#counterInput')?.value) || 0
+        counter: parseInt($('#counterInput')?.value) || 0,
+        pinned: Boolean($('#pinnedInput')?.checked),
+        deprecated: Boolean($('#deprecatedInput')?.checked),
+        tags: normalizeTags(selectedTags)
       };
 
       if (!data.secret) {

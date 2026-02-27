@@ -111,6 +111,27 @@
         <details class="advanced">
           <summary>高级选项</summary>
           <div class="form-advanced">
+            <div class="tag-editor">
+              <span class="advanced-label">标签</span>
+              <div class="tag-input-row">
+                <input type="text" id="tagInput" placeholder="输入标签后回车">
+                <button type="button" class="btn-tag-add" id="addTagBtn">添加</button>
+              </div>
+              <div class="tag-suggestions" id="tagSuggestions"></div>
+              <div class="tag-selected" id="selectedTags"></div>
+            </div>
+
+            <div class="status-options">
+              <label class="checkbox-label">
+                <input type="checkbox" id="pinnedInput">
+                <span>置顶</span>
+              </label>
+              <label class="checkbox-label">
+                <input type="checkbox" id="deprecatedInput">
+                <span>弃用（首页隐藏）</span>
+              </label>
+            </div>
+
             <div class="form-row">
               <label class="form-label">
                 <span>算法</span>
