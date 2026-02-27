@@ -1164,14 +1164,69 @@
     });
   }
 
+  function errorToMessage(error) {
+    if (!error) return '';
+    if (typeof error === 'string') return error;
+    return error.message || String(error);
+  }
+
+  async function getQrRuntimeSupportSnapshot() {
+    const snapshot = {
+      protocol: location?.protocol || '',
+      isSecureContext: !!window.isSecureContext,
+      userAgent: navigator?.userAgent || '',
+      hasBridge: !!window.utoolsBridge,
+      hasBridgeGetClipboardImage: !!(window.utoolsBridge && window.utoolsBridge.getClipboardImage),
+      hasNavigatorClipboardRead: !!(navigator.clipboard && navigator.clipboard.read),
+      hasNavigatorClipboardReadText: !!(navigator.clipboard && navigator.clipboard.readText),
+      hasBarcodeDetector: typeof BarcodeDetector !== 'undefined',
+      hasJsQr: typeof window.jsQR === 'function',
+      barcodeDetectorConstructorOk: false,
+      barcodeDetectorSupportedFormats: null,
+      barcodeDetectorCanDetectQr: null,
+      permissions: {}
+    };
+
+    if (snapshot.hasBarcodeDetector) {
+      try {
+        // 仅检测构造能力，不做实际识别。
+        const detector = new BarcodeDetector({ formats: ['qr_code'] });
+        snapshot.barcodeDetectorConstructorOk = !!detector;
+      } catch (e) {
+        snapshot.barcodeDetectorConstructorError = errorToMessage(e);
+      }
+
+      if (typeof BarcodeDetector.getSupportedFormats === 'function') {
+        try {
+          const formats = await BarcodeDetector.getSupportedFormats();
+          snapshot.barcodeDetectorSupportedFormats = Array.isArray(formats) ? formats : [];
+          snapshot.barcodeDetectorCanDetectQr = snapshot.barcodeDetectorSupportedFormats.includes('qr_code');
+        } catch (e) {
+          snapshot.barcodeDetectorSupportedFormatsError = errorToMessage(e);
+        }
+      }
+    }
+
+    if (navigator.permissions && navigator.permissions.query) {
+      const permissionNames = ['clipboard-read', 'clipboard-write'];
+      for (const name of permissionNames) {
+        try {
+          const status = await navigator.permissions.query({ name });
+          snapshot.permissions[name] = status.state;
+        } catch (e) {
+          snapshot.permissions[name] = 'unsupported';
+          snapshot.permissions[name + ':error'] = errorToMessage(e);
+        }
+      }
+    }
+
+    return snapshot;
+  }
+
   async function decodeQrRawTextFromImage(imageData, source = 'image') {
     try {
       if (!isImageDataUrl(imageData)) {
         logClipboardDebug('decodeQrRawTextFromImage:skip:not-image-data-url', { source });
-        return null;
-      }
-      if (typeof BarcodeDetector === 'undefined') {
-        logClipboardDebug('decodeQrRawTextFromImage:skip:no-barcode-detector', { source });
         return null;
       }
 
@@ -1197,19 +1252,74 @@
         return null;
       }
       ctx.drawImage(image, 0, 0, drawWidth, drawHeight);
+      const imageBitmap = ctx.getImageData(0, 0, drawWidth, drawHeight);
 
-      const detector = new BarcodeDetector({ formats: ['qr_code'] });
-      const barcodes = await detector.detect(canvas);
-      const rawValue = (barcodes || [])
-        .map(item => (item && typeof item.rawValue === 'string') ? item.rawValue.trim() : '')
-        .find(Boolean) || null;
+      // 1) 尝试原生 BarcodeDetector（若存在）
+      if (typeof BarcodeDetector !== 'undefined') {
+        try {
+          const detector = new BarcodeDetector({ formats: ['qr_code'] });
+          const barcodes = await detector.detect(canvas);
+          const nativeRawValue = (barcodes || [])
+            .map(item => (item && typeof item.rawValue === 'string') ? item.rawValue.trim() : '')
+            .find(Boolean) || null;
 
-      logClipboardDebug('decodeQrRawTextFromImage:done', {
-        source,
-        barcodeCount: Array.isArray(barcodes) ? barcodes.length : 0,
-        rawPreview: maskClipboardPreview(rawValue)
-      });
-      return rawValue;
+          if (nativeRawValue) {
+            logClipboardDebug('decodeQrRawTextFromImage:done:native', {
+              source,
+              barcodeCount: Array.isArray(barcodes) ? barcodes.length : 0,
+              rawPreview: maskClipboardPreview(nativeRawValue)
+            });
+            return nativeRawValue;
+          }
+
+          logClipboardDebug('decodeQrRawTextFromImage:native:no-result', {
+            source,
+            barcodeCount: Array.isArray(barcodes) ? barcodes.length : 0
+          });
+        } catch (e) {
+          logClipboardDebug('decodeQrRawTextFromImage:native:error', {
+            source,
+            message: errorToMessage(e)
+          });
+        }
+      } else {
+        logClipboardDebug('decodeQrRawTextFromImage:native:unavailable', {
+          source,
+          protocol: location?.protocol || '',
+          isSecureContext: !!window.isSecureContext
+        });
+      }
+
+      // 2) fallback 到 jsQR（uTools/Electron 更常见）
+      if (typeof window.jsQR === 'function') {
+        try {
+          const jsqrResult = window.jsQR(
+            imageBitmap.data,
+            imageBitmap.width,
+            imageBitmap.height,
+            { inversionAttempts: 'attemptBoth' }
+          );
+          const jsqrRawValue = jsqrResult && typeof jsqrResult.data === 'string'
+            ? jsqrResult.data.trim()
+            : null;
+
+          logClipboardDebug('decodeQrRawTextFromImage:done:jsqr', {
+            source,
+            found: !!jsqrRawValue,
+            rawPreview: maskClipboardPreview(jsqrRawValue)
+          });
+          return jsqrRawValue;
+        } catch (e) {
+          logClipboardDebug('decodeQrRawTextFromImage:jsqr:error', {
+            source,
+            message: errorToMessage(e)
+          });
+          return null;
+        }
+      }
+
+      logClipboardDebug('decodeQrRawTextFromImage:jsqr:unavailable', { source });
+      return null;
     } catch (e) {
       logClipboardDebug('decodeQrRawTextFromImage:error', {
         source,
@@ -1220,6 +1330,11 @@
   }
 
   async function getClipboardImageDataUrl() {
+    logClipboardDebug('getClipboardImageDataUrl:start', {
+      hasBridgeGetClipboardImage: !!(window.utoolsBridge && window.utoolsBridge.getClipboardImage),
+      hasNavigatorClipboardRead: !!(navigator.clipboard && navigator.clipboard.read)
+    });
+
     try {
       if (window.utoolsBridge && window.utoolsBridge.getClipboardImage) {
         const bridgeImage = window.utoolsBridge.getClipboardImage();
@@ -1230,16 +1345,26 @@
           logClipboardDebug('getClipboardImageDataUrl:bridge:success', { length: dataUrl.length });
           return dataUrl;
         }
+        logClipboardDebug('getClipboardImageDataUrl:bridge:not-image-data-url', {
+          resultType: typeof dataUrl,
+          preview: typeof dataUrl === 'string' ? dataUrl.slice(0, 40) : dataUrl
+        });
       }
     } catch (e) {
       logClipboardDebug('getClipboardImageDataUrl:bridge:error', {
-        message: e && e.message ? e.message : String(e)
+        message: errorToMessage(e)
       });
     }
 
     try {
       if (navigator.clipboard && navigator.clipboard.read) {
         const items = await navigator.clipboard.read();
+        const itemTypes = items.map(item => item.types || []);
+        logClipboardDebug('getClipboardImageDataUrl:navigator:items', {
+          itemCount: items.length,
+          itemTypes
+        });
+
         for (const item of items) {
           const imageType = (item.types || []).find(type => type.startsWith('image/'));
           if (!imageType) continue;
@@ -1256,7 +1381,8 @@
       }
     } catch (e) {
       logClipboardDebug('getClipboardImageDataUrl:navigator:error', {
-        message: e && e.message ? e.message : String(e)
+        message: errorToMessage(e),
+        name: e && e.name ? e.name : ''
       });
     }
 
@@ -1371,6 +1497,41 @@
     }
 
     logClipboardDebug('manual-debug:result', result);
+    return result;
+  }
+
+  async function debugQrImport() {
+    const result = {
+      runtime: await getQrRuntimeSupportSnapshot()
+    };
+
+    try {
+      const imageData = await getClipboardImageDataUrl();
+      result.clipboardImage = imageData
+        ? {
+            found: true,
+            length: imageData.length,
+            prefix: imageData.slice(0, 40)
+          }
+        : { found: false };
+
+      if (imageData) {
+        const rawValue = await decodeQrRawTextFromImage(imageData, 'manual-debug-qr');
+        result.qrRawPreview = maskClipboardPreview(rawValue);
+        if (rawValue) {
+          const parsed = parseOtpauthUrl(rawValue);
+          result.parsed = parsed
+            ? { name: parsed.name, issuer: parsed.issuer, type: parsed.type }
+            : null;
+        } else {
+          result.parsed = null;
+        }
+      }
+    } catch (e) {
+      result.error = errorToMessage(e);
+    }
+
+    logClipboardDebug('manual-debug-qr:result', result);
     return result;
   }
 
@@ -1707,7 +1868,8 @@
     switchView,
     toggleTheme,
     showContextMenu,
-    openImportMenu
+    openImportMenu,
+    debugQrImport
   };
 
   if (CLIPBOARD_DEBUG_ENABLED) {
