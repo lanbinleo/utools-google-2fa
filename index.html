@@ -15,6 +15,7 @@
         <nav class="nav">
           <button class="nav-btn active" data-view="home">验证码</button>
           <button class="nav-btn" data-view="manage">管理</button>
+          <button class="nav-btn" data-view="migration">迁移</button>
         </nav>
       </div>
       <div class="header-right">
@@ -63,6 +64,70 @@
       <!-- 管理视图 - 列表 -->
       <div id="manageView" class="view">
         <div class="manage-list" id="manageList"></div>
+      </div>
+
+      <!-- 迁移视图 -->
+      <div id="migrationView" class="view">
+        <div class="migration-layout">
+          <section class="migration-hero">
+            <h2>迁移与导入</h2>
+            <p>支持 otpauth:// 与 otpauth-migration:// 链接，以及二维码图片导入，先预览再落库。</p>
+            <div class="migration-meta">
+              <span class="migration-badge" id="migrationCountBadge">当前条目 0</span>
+              <span class="migration-badge muted">仅本地处理，不上传网络</span>
+            </div>
+          </section>
+
+          <section class="migration-grid">
+            <article class="migration-card">
+              <h3>快捷入口</h3>
+              <div class="migration-actions">
+                <button type="button" class="btn-primary migration-btn" id="migrationPasteQuickBtn">粘贴迁移链接</button>
+                <button type="button" class="btn-muted migration-btn" id="migrationQrFileBtn">识别二维码图片</button>
+                <input type="file" id="migrationQrFileInput" accept="image/*" hidden>
+              </div>
+              <div class="migration-paste-box" id="migrationPasteBox" tabindex="0">
+                <p>按 <kbd>Ctrl</kbd> + <kbd>V</kbd> 粘贴二维码图片</p>
+                <span>会自动识别并加入导入预览</span>
+              </div>
+              <div class="migration-paste-box" id="migrationPasteBox" tabindex="0">
+                <p><b>Tips</b> 跨工具的数据迁移</p>
+                <span>可以从别的工具内，通过截屏工具截取二维码粘贴</span>
+              </div>
+            </article>
+
+            <article class="migration-card">
+              <h3>批量粘贴</h3>
+              <p class="migration-card-desc">每行一个链接，支持 otpauth:// 与 otpauth-migration://offline?data=...</p>
+              <textarea id="migrationInput" class="migration-textarea" rows="5" placeholder="otpauth://totp/Google:alice@example.com?...&#10;otpauth-migration://offline?data=..."></textarea>
+              <div class="migration-actions">
+                <button type="button" class="btn-primary migration-btn" id="migrationParseBtn">解析预览</button>
+                <button type="button" class="btn-muted migration-btn" id="migrationClearBtn">清空</button>
+              </div>
+            </article>
+
+            <article class="migration-card">
+              <h3>预览结果</h3>
+              <p id="migrationPreviewSummary" class="migration-card-desc">暂无待导入条目。</p>
+              <div class="migration-preview-list" id="migrationPreviewList"></div>
+            </article>
+
+            <article class="migration-card">
+              <h3>冲突策略</h3>
+              <label class="form-label migration-field">
+                <span>检测到同名同发行方条目时</span>
+                <select id="migrationConflictSelect">
+                  <option value="skip">跳过已有条目（推荐）</option>
+                  <option value="replace">覆盖已有条目</option>
+                  <option value="duplicate">保留并创建副本</option>
+                </select>
+              </label>
+              <div class="migration-actions">
+                <button type="button" class="btn-primary migration-btn" id="migrationApplyBtn">确认导入</button>
+              </div>
+            </article>
+          </section>
+        </div>
       </div>
     </main>
 
@@ -212,13 +277,13 @@
             </svg>
             <span>粘贴 otpauth:// 链接</span>
           </button>
-          <button class="import-option" id="importJsonBtn">
+          <button class="import-option" id="importMigrationBtn">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
               <polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/>
               <line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/>
             </svg>
-            <span>导入 JSON 备份</span>
+            <span>粘贴迁移链接（多账号）</span>
           </button>
         </div>
       </div>

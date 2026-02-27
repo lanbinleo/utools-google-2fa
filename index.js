@@ -246,6 +246,271 @@
     }
   }
 
+  function bytesToBase32(bytes) {
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    let output = '';
+    let buffer = 0;
+    let bitsLeft = 0;
+
+    for (let i = 0; i < bytes.length; i++) {
+      buffer = (buffer << 8) | (bytes[i] & 0xff);
+      bitsLeft += 8;
+      while (bitsLeft >= 5) {
+        bitsLeft -= 5;
+        output += alphabet[(buffer >> bitsLeft) & 0x1f];
+      }
+    }
+
+    if (bitsLeft > 0) {
+      output += alphabet[(buffer << (5 - bitsLeft)) & 0x1f];
+    }
+
+    return output;
+  }
+
+  function decodeBase64ToBytes(base64Text) {
+    const normalized = String(base64Text || '')
+      .trim()
+      .replace(/-/g, '+')
+      .replace(/_/g, '/')
+      .replace(/\s+/g, '');
+
+    if (!normalized) return null;
+
+    const pad = normalized.length % 4;
+    const padded = pad === 0 ? normalized : normalized + '='.repeat(4 - pad);
+    const binary = atob(padded);
+    const bytes = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+  }
+
+  function readProtoVarint(bytes, offset) {
+    let result = 0n;
+    let shift = 0n;
+    let pos = offset;
+
+    while (pos < bytes.length) {
+      const b = bytes[pos++];
+      result |= BigInt(b & 0x7f) << shift;
+      if ((b & 0x80) === 0) {
+        return { value: result, offset: pos };
+      }
+      shift += 7n;
+      if (shift > 70n) break;
+    }
+
+    return null;
+  }
+
+  function skipProtoField(bytes, offset, wireType) {
+    if (wireType === 0) {
+      const v = readProtoVarint(bytes, offset);
+      return v ? v.offset : null;
+    }
+    if (wireType === 1) {
+      return offset + 8 <= bytes.length ? offset + 8 : null;
+    }
+    if (wireType === 2) {
+      const lenV = readProtoVarint(bytes, offset);
+      if (!lenV) return null;
+      const len = Number(lenV.value);
+      const next = lenV.offset + len;
+      return next <= bytes.length ? next : null;
+    }
+    if (wireType === 5) {
+      return offset + 4 <= bytes.length ? offset + 4 : null;
+    }
+    return null;
+  }
+
+  function decodeUtf8Bytes(bytes) {
+    try {
+      if (typeof TextDecoder !== 'undefined') {
+        return new TextDecoder('utf-8').decode(bytes);
+      }
+    } catch (_) {
+      // ignore
+    }
+    let out = '';
+    for (let i = 0; i < bytes.length; i++) {
+      out += String.fromCharCode(bytes[i]);
+    }
+    try {
+      return decodeURIComponent(escape(out));
+    } catch (_) {
+      return out;
+    }
+  }
+
+  function parseMigrationOtpParameter(bytes) {
+    const item = {
+      secret: '',
+      name: '',
+      issuer: '',
+      algorithm: 'SHA1',
+      digits: 6,
+      type: 'totp',
+      period: 30,
+      counter: 0
+    };
+
+    let offset = 0;
+    while (offset < bytes.length) {
+      const tagV = readProtoVarint(bytes, offset);
+      if (!tagV) return null;
+      offset = tagV.offset;
+      const tag = Number(tagV.value);
+      const field = tag >> 3;
+      const wire = tag & 0x07;
+
+      if (field === 1 && wire === 2) {
+        const lenV = readProtoVarint(bytes, offset);
+        if (!lenV) return null;
+        const len = Number(lenV.value);
+        const start = lenV.offset;
+        const end = start + len;
+        if (end > bytes.length) return null;
+        item.secret = bytesToBase32(bytes.slice(start, end));
+        offset = end;
+        continue;
+      }
+
+      if ((field === 2 || field === 3) && wire === 2) {
+        const lenV = readProtoVarint(bytes, offset);
+        if (!lenV) return null;
+        const len = Number(lenV.value);
+        const start = lenV.offset;
+        const end = start + len;
+        if (end > bytes.length) return null;
+        const text = decodeUtf8Bytes(bytes.slice(start, end));
+        if (field === 2) item.name = text;
+        if (field === 3) item.issuer = text;
+        offset = end;
+        continue;
+      }
+
+      if ((field === 4 || field === 5 || field === 6 || field === 7) && wire === 0) {
+        const valueV = readProtoVarint(bytes, offset);
+        if (!valueV) return null;
+        const value = Number(valueV.value);
+        if (field === 4) {
+          item.algorithm = ({ 1: 'SHA1', 2: 'SHA256', 3: 'SHA512', 4: 'MD5' })[value] || 'SHA1';
+        } else if (field === 5) {
+          item.digits = ({ 1: 6, 2: 8 })[value] || 6;
+        } else if (field === 6) {
+          item.type = value === 1 ? 'hotp' : 'totp';
+        } else if (field === 7) {
+          item.counter = Number.isFinite(value) && value >= 0 ? value : 0;
+        }
+        offset = valueV.offset;
+        continue;
+      }
+
+      const skipped = skipProtoField(bytes, offset, wire);
+      if (skipped == null) return null;
+      offset = skipped;
+    }
+
+    if (!item.secret) return null;
+    if (!item.name) item.name = item.issuer || 'Imported';
+    return item;
+  }
+
+  function parseMigrationPayload(bytes) {
+    const items = [];
+    let offset = 0;
+
+    while (offset < bytes.length) {
+      const tagV = readProtoVarint(bytes, offset);
+      if (!tagV) return null;
+      offset = tagV.offset;
+      const tag = Number(tagV.value);
+      const field = tag >> 3;
+      const wire = tag & 0x07;
+
+      if (field === 1 && wire === 2) {
+        const lenV = readProtoVarint(bytes, offset);
+        if (!lenV) return null;
+        const len = Number(lenV.value);
+        const start = lenV.offset;
+        const end = start + len;
+        if (end > bytes.length) return null;
+        const parsed = parseMigrationOtpParameter(bytes.slice(start, end));
+        if (parsed) items.push(parsed);
+        offset = end;
+        continue;
+      }
+
+      const skipped = skipProtoField(bytes, offset, wire);
+      if (skipped == null) return null;
+      offset = skipped;
+    }
+
+    return items;
+  }
+
+  function parseOtpauthMigrationDataPayload(dataText) {
+    const bytes = decodeBase64ToBytes(dataText);
+    if (!bytes || !bytes.length) return [];
+    const parsedItems = parseMigrationPayload(bytes) || [];
+    return parsedItems;
+  }
+
+  function parseOtpauthMigrationUrl(url) {
+    try {
+      if (typeof url !== 'string') return [];
+      const trimmed = url.trim();
+      if (!trimmed) return [];
+      if (!trimmed.startsWith('otpauth-migration://')) return [];
+
+      // 手动提取 data 参数，避免 URLSearchParams 把 '+' 解析为空格造成损坏。
+      const match = trimmed.match(/[?&]data=([^&]+)/);
+      if (!match || !match[1]) return [];
+      const rawData = match[1];
+      const decodedData = (() => {
+        try {
+          return decodeURIComponent(rawData);
+        } catch (_) {
+          return rawData;
+        }
+      })();
+
+      return parseOtpauthMigrationDataPayload(decodedData);
+    } catch (e) {
+      console.error('解析 otpauth-migration URL 失败:', e);
+      return [];
+    }
+  }
+
+  function parseImportCandidatesFromText(text) {
+    if (typeof text !== 'string') return [];
+    const trimmed = text.trim();
+    if (!trimmed) return [];
+
+    const parsed = parseOtpauthUrl(trimmed);
+    if (parsed) return [parsed];
+
+    const migrated = parseOtpauthMigrationUrl(trimmed);
+    if (migrated.length) return migrated;
+
+    if (trimmed.startsWith('data=')) {
+      const payload = trimmed.slice('data='.length);
+      const payloadItems = parseOtpauthMigrationDataPayload(payload);
+      if (payloadItems.length) return payloadItems;
+    }
+
+    // 兼容直接粘贴 data payload（不带 otpauth-migration:// 前缀）
+    if (/^[A-Za-z0-9+/=_-]{80,}$/.test(trimmed)) {
+      const payloadItems = parseOtpauthMigrationDataPayload(trimmed);
+      if (payloadItems.length) return payloadItems;
+    }
+
+    return [];
+  }
+
   // ==================== 数据存储 ====================
 
   const STORAGE_KEY = 'google2fa_entries';
@@ -302,6 +567,8 @@
   let activeFilterTags = [];
   const manageSectionExpanded = {};
   const emptySectionUserExpanded = {};
+  let migrationPreviewItems = [];
+  let migrationInvalidCount = 0;
 
   // ==================== DOM 元素 ====================
 
@@ -582,6 +849,202 @@
     ].join('');
   }
 
+  function normalizeMigrationCandidate(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const secret = typeof raw.secret === 'string' ? raw.secret.trim() : '';
+    if (!secret) return null;
+
+    const type = String(raw.type || raw.otpType || 'totp').toLowerCase();
+    if (type !== 'totp' && type !== 'hotp') return null;
+
+    const digits = parseInt(raw.digits, 10);
+    const period = parseInt(raw.period, 10);
+    const counter = parseInt(raw.counter, 10);
+
+    return {
+      name: String(raw.name || raw.account || raw.label || raw.issuer || '未命名').trim() || '未命名',
+      issuer: String(raw.issuer || '').trim(),
+      secret: secret.toUpperCase(),
+      algorithm: String(raw.algorithm || 'SHA1').toUpperCase(),
+      digits: Number.isFinite(digits) && digits > 0 ? digits : 6,
+      type,
+      period: Number.isFinite(period) && period > 0 ? period : 30,
+      counter: type === 'hotp'
+        ? (Number.isFinite(counter) && counter >= 0 ? counter : 0)
+        : 0
+    };
+  }
+
+  function parseMigrationInputText(text) {
+    const trimmed = (text || '').trim();
+    if (!trimmed) {
+      return { items: [], invalidCount: 0 };
+    }
+
+    if (trimmed.includes('otpauth-migration://')) {
+      const compact = trimmed.replace(/\s+/g, '');
+      const migrated = parseImportCandidatesFromText(compact)
+        .map(item => normalizeMigrationCandidate(item))
+        .filter(Boolean);
+      if (migrated.length > 0) {
+        return { items: migrated, invalidCount: 0 };
+      }
+    }
+
+    const lines = trimmed.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+    const items = [];
+    let invalidCount = 0;
+
+    lines.forEach(line => {
+      const parsedItems = parseImportCandidatesFromText(line);
+      if (parsedItems.length > 0) {
+        parsedItems.forEach(parsed => {
+          const normalized = normalizeMigrationCandidate(parsed);
+          if (normalized) items.push(normalized);
+        });
+      } else {
+        invalidCount++;
+      }
+    });
+
+    return { items, invalidCount };
+  }
+
+  function setMigrationPreview(items, invalidCount = 0) {
+    migrationPreviewItems = Array.isArray(items) ? items : [];
+    migrationInvalidCount = Number.isFinite(invalidCount) && invalidCount >= 0 ? invalidCount : 0;
+    renderMigrationPreview();
+  }
+
+  function renderMigrationPreview() {
+    const previewList = $('#migrationPreviewList');
+    const summary = $('#migrationPreviewSummary');
+    if (!previewList || !summary) return;
+
+    if (!migrationPreviewItems.length) {
+      summary.textContent = migrationInvalidCount > 0
+        ? `可导入 0 条，无法识别 ${migrationInvalidCount} 条。`
+        : '暂无待导入条目。';
+      previewList.innerHTML = '<div class="migration-card-desc">请粘贴 otpauth 或 otpauth-migration 链接后解析。</div>';
+      return;
+    }
+
+    summary.textContent = `可导入 ${migrationPreviewItems.length} 条${migrationInvalidCount ? `，无法识别 ${migrationInvalidCount} 条` : ''}。`;
+    previewList.innerHTML = migrationPreviewItems.map(item => `
+      <div class="migration-preview-item">
+        <div>
+          <div class="migration-preview-name">${escapeHtml(item.name || '未命名')}</div>
+          <div class="migration-preview-meta">${escapeHtml(item.issuer || '无发行方')} · ${escapeHtml(item.algorithm || 'SHA1')} · ${item.digits || 6} 位</div>
+        </div>
+        <span class="migration-preview-type">${(item.type || 'totp').toUpperCase()}</span>
+      </div>
+    `).join('');
+  }
+
+  function renderMigrationView() {
+    const badge = $('#migrationCountBadge');
+    if (badge) {
+      badge.textContent = `当前条目 ${entries.length}`;
+    }
+    renderMigrationPreview();
+  }
+
+  function buildImportedName(baseName, issuer, sourceEntries) {
+    const seed = `${baseName || '未命名'} (Imported)`;
+    const hasName = (name) => sourceEntries.some(entry =>
+      (entry.name || '') === name && (entry.issuer || '') === (issuer || '')
+    );
+
+    if (!hasName(seed)) return seed;
+    let index = 2;
+    while (hasName(`${seed} ${index}`)) {
+      index++;
+    }
+    return `${seed} ${index}`;
+  }
+
+  async function applyMigrationImport() {
+    if (!migrationPreviewItems.length) {
+      showToast('没有可导入的条目', 'error');
+      return;
+    }
+
+    const strategy = $('#migrationConflictSelect')?.value || 'skip';
+    const draft = [...entries];
+    let importedCount = 0;
+    let replacedCount = 0;
+    let skippedCount = 0;
+    let failedCount = 0;
+
+    for (const item of migrationPreviewItems) {
+      const name = (item.name || '未命名').trim() || '未命名';
+      const issuer = (item.issuer || '').trim();
+      const conflictIndex = draft.findIndex(entry =>
+        (entry.name || '').trim() === name && (entry.issuer || '').trim() === issuer
+      );
+      const hasConflict = conflictIndex >= 0;
+
+      if (hasConflict && strategy === 'skip') {
+        skippedCount++;
+        continue;
+      }
+
+      const base = hasConflict ? draft[conflictIndex] : null;
+      const candidate = normalizeEntry({
+        ...base,
+        id: hasConflict && strategy === 'replace' ? base.id : generateId(),
+        name: hasConflict && strategy === 'duplicate'
+          ? buildImportedName(name, issuer, draft)
+          : name,
+        issuer,
+        secret: item.secret || '',
+        algorithm: item.algorithm || 'SHA1',
+        digits: parseInt(item.digits, 10) || 6,
+        type: item.type || 'totp',
+        period: parseInt(item.period, 10) || 30,
+        counter: parseInt(item.counter, 10) || 0,
+        pinned: false,
+        pinnedAt: 0,
+        deprecated: false,
+        tags: normalizeTags(item.tags),
+        lastUsed: base?.lastUsed || Date.now()
+      });
+
+      try {
+        if (candidate.type === 'hotp') {
+          await generateHOTP(candidate.secret, { counter: candidate.counter });
+        } else {
+          await generateTOTP(candidate.secret, { digits: candidate.digits, period: candidate.period });
+        }
+      } catch (_) {
+        failedCount++;
+        continue;
+      }
+
+      if (hasConflict && strategy === 'replace') {
+        draft[conflictIndex] = candidate;
+        importedCount++;
+        replacedCount++;
+      } else {
+        draft.push(candidate);
+        importedCount++;
+      }
+    }
+
+    entries = draft;
+    saveEntries(entries);
+    renderCurrentView();
+    setMigrationPreview([], 0);
+
+    const resultMessage = [
+      `导入 ${importedCount} 条`,
+      replacedCount ? `覆盖 ${replacedCount} 条` : '',
+      skippedCount ? `跳过 ${skippedCount} 条` : '',
+      failedCount ? `失败 ${failedCount} 条` : ''
+    ].filter(Boolean).join('，');
+    showToast(resultMessage, importedCount > 0 ? 'success' : 'error');
+  }
+
   // 刷新验证码
   async function refreshCodes() {
     const codeEls = $$('#codeGrid .code-value');
@@ -656,11 +1119,16 @@
     return JSON.stringify(getAddFormState()) !== addDialogInitialState;
   }
 
-  function closeAddDialogWithGuard() {
+  async function closeAddDialogWithGuard() {
     const dialog = $('#addDialog');
     if (!dialog || !dialog.open) return true;
     if (isAddDialogDirty()) {
-      const confirmed = confirm('当前修改未保存，确定关闭吗？');
+      const confirmed = await showAppConfirm({
+        title: '放弃未保存修改',
+        message: '当前修改尚未保存，确认关闭并放弃这些修改吗？',
+        confirmText: '放弃修改',
+        confirmVariant: 'danger'
+      });
       if (!confirmed) return false;
     }
     dialog.close();
@@ -672,18 +1140,28 @@
     return (entry.name || entry.issuer || '该条目').trim();
   }
 
-  function confirmDeleteEntry(entry) {
+  function showAppConfirm(options = {}) {
     const dialog = $('#deleteConfirmDialog');
     const confirmBtn = $('#confirmDeleteBtn');
     const cancelBtn = $('#cancelDeleteBtn');
+    const titleEl = $('#deleteConfirmTitle');
     const messageEl = $('#deleteConfirmMessage');
 
-    if (!dialog || !confirmBtn || !cancelBtn || !messageEl) {
-      return Promise.resolve(confirm('确定要删除吗？'));
+    if (!dialog || !confirmBtn || !cancelBtn || !messageEl || !titleEl) {
+      showToast('确认弹窗初始化失败', 'error');
+      return Promise.resolve(false);
     }
 
-    const displayName = getEntryDisplayName(entry);
-    messageEl.textContent = `确定删除「${displayName}」吗？删除后不可恢复。`;
+    const title = options.title || '请确认';
+    const message = options.message || '确认执行该操作吗？';
+    const confirmText = options.confirmText || '确认';
+    const confirmVariant = options.confirmVariant || 'danger';
+
+    titleEl.textContent = title;
+    messageEl.textContent = message;
+    confirmBtn.textContent = confirmText;
+    confirmBtn.classList.remove('btn-danger', 'btn-primary');
+    confirmBtn.classList.add(confirmVariant === 'primary' ? 'btn-primary' : 'btn-danger');
 
     return new Promise((resolve) => {
       let settled = false;
@@ -724,10 +1202,20 @@
         dialog.showModal();
       } catch (e) {
         cleanup();
-        resolve(confirm('确定要删除吗？'));
+        resolve(false);
         return;
       }
       cancelBtn.focus();
+    });
+  }
+
+  function confirmDeleteEntry(entry) {
+    const displayName = getEntryDisplayName(entry);
+    return showAppConfirm({
+      title: '确认删除',
+      message: `确定删除「${displayName}」吗？删除后不可恢复。`,
+      confirmText: '删除',
+      confirmVariant: 'danger'
     });
   }
 
@@ -857,6 +1345,10 @@
     const sortSelect = $('#sortSelect');
     if (sortSelect) {
       sortSelect.style.display = view === 'home' ? '' : 'none';
+    }
+    const toolbar = $('.toolbar');
+    if (toolbar) {
+      toolbar.style.display = view === 'migration' ? 'none' : '';
     }
 
     // 更新视图显示 - 带动画
@@ -1106,15 +1598,66 @@
 
   // 渲染当前视图
   function renderCurrentView() {
-    renderFilterTags();
     if (currentView === 'home') {
+      renderFilterTags();
       renderHomeView();
-    } else {
+      return;
+    }
+    if (currentView === 'manage') {
+      renderFilterTags();
       renderManageView();
+      return;
+    }
+    if (currentView === 'migration') {
+      renderMigrationView();
+      return;
+    }
+    renderFilterTags();
+    renderHomeView();
+  }
+
+  async function readClipboardTextRaw(source = 'unknown') {
+    try {
+      logClipboardDebug('readClipboardTextRaw:start', {
+        source,
+        hasBridge: !!window.utoolsBridge,
+        hasBridgeGetClipboardText: !!(window.utoolsBridge && window.utoolsBridge.getClipboardText),
+        hasNavigatorClipboard: !!(navigator.clipboard && navigator.clipboard.readText)
+      });
+
+      let text = null;
+      if (window.utoolsBridge && window.utoolsBridge.getClipboardText) {
+        logClipboardDebug('readClipboardTextRaw:bridge:invoke');
+        const clipboardResult = window.utoolsBridge.getClipboardText();
+        text = (clipboardResult && typeof clipboardResult.then === 'function')
+          ? await clipboardResult
+          : clipboardResult;
+        logClipboardDebug('readClipboardTextRaw:bridge:resolved', {
+          textType: typeof text,
+          textPreview: maskClipboardPreview(text)
+        });
+      }
+      if ((typeof text !== 'string' || !text) && navigator.clipboard?.readText) {
+        logClipboardDebug('readClipboardTextRaw:navigator:fallback:invoke');
+        text = await navigator.clipboard.readText();
+        logClipboardDebug('readClipboardTextRaw:navigator:fallback:resolved', {
+          textType: typeof text,
+          textPreview: maskClipboardPreview(text)
+        });
+      }
+      if (typeof text !== 'string') return '';
+      return text.trim();
+    } catch (e) {
+      logClipboardDebug('readClipboardTextRaw:error', {
+        source,
+        name: e && e.name ? e.name : 'Error',
+        message: errorToMessage(e)
+      });
+      return '';
     }
   }
 
-  // 从剪贴板粘贴并解析
+  // 从剪贴板粘贴并解析（单条）
   async function handlePaste(source = 'unknown') {
     try {
       logClipboardDebug('handlePaste:start', {
@@ -1124,46 +1667,17 @@
         hasNavigatorClipboard: !!(navigator.clipboard && navigator.clipboard.readText)
       });
 
-      // 优先使用 utools bridge
-      let text = null;
-      if (window.utoolsBridge && window.utoolsBridge.getClipboardText) {
-        logClipboardDebug('handlePaste:bridge:invoke');
-        const clipboardResult = window.utoolsBridge.getClipboardText();
-        logClipboardDebug('handlePaste:bridge:return', {
-          returnType: typeof clipboardResult,
-          isPromise: !!(clipboardResult && typeof clipboardResult.then === 'function')
-        });
-        text = (clipboardResult && typeof clipboardResult.then === 'function')
-          ? await clipboardResult
-          : clipboardResult;
-        logClipboardDebug('handlePaste:bridge:resolved', {
-          textType: typeof text,
-          textPreview: maskClipboardPreview(text)
-        });
-      }
-      if ((typeof text !== 'string' || !text) && navigator.clipboard) {
-        logClipboardDebug('handlePaste:navigator:fallback:invoke');
-        text = await navigator.clipboard.readText();
-        logClipboardDebug('handlePaste:navigator:fallback:resolved', {
-          textType: typeof text,
-          textPreview: maskClipboardPreview(text)
-        });
-      }
-      if (typeof text !== 'string') {
-        logClipboardDebug('handlePaste:abort:not-string', { textType: typeof text });
-        return null;
-      }
-
-      const trimmed = text.trim();
+      const trimmed = await readClipboardTextRaw(source);
       if (!trimmed) {
         logClipboardDebug('handlePaste:abort:empty-string');
         return null;
       }
 
-      // 尝试解析 otpauth URL
-      const parsed = parseOtpauthUrl(trimmed);
-      if (parsed) {
+      const candidates = parseImportCandidatesFromText(trimmed);
+      if (candidates.length > 0) {
+        const parsed = candidates[0];
         logClipboardDebug('handlePaste:parsed:success', {
+          candidateCount: candidates.length,
           name: parsed.name,
           issuer: parsed.issuer,
           type: parsed.type
@@ -1219,6 +1733,15 @@
       reader.onload = () => resolve(reader.result);
       reader.onerror = () => reject(reader.error || new Error('读取图片失败'));
       reader.readAsDataURL(blob);
+    });
+  }
+
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error || new Error('读取文件失败'));
+      reader.readAsDataURL(file);
     });
   }
 
@@ -1457,10 +1980,15 @@
     return null;
   }
 
-  async function parseOtpauthFromImageData(imageData, source = 'image') {
+  async function parseImportCandidatesFromImageData(imageData, source = 'image') {
     const rawText = await decodeQrRawTextFromImage(imageData, source);
-    if (!rawText) return null;
-    return parseOtpauthUrl(rawText);
+    if (!rawText) return [];
+    return parseImportCandidatesFromText(rawText);
+  }
+
+  async function parseOtpauthFromImageData(imageData, source = 'image') {
+    const items = await parseImportCandidatesFromImageData(imageData, source);
+    return items.length ? items[0] : null;
   }
 
   async function parseOtpauthFromClipboardImage(source = 'clipboard-image') {
@@ -1735,9 +2263,19 @@
       closeImportMenu();
     });
 
-    $('#importJsonBtn')?.addEventListener('click', () => {
-      showToast('JSON 导入即将上线', 'error');
+    $('#importMigrationBtn')?.addEventListener('click', async () => {
       closeImportMenu();
+      switchView('migration');
+      const text = await readClipboardTextRaw('import-migration-btn');
+      if (!text) {
+        showToast('请复制 otpauth-migration 链接后重试', 'error');
+        return;
+      }
+      const input = $('#migrationInput');
+      if (input) input.value = text;
+      const parsed = parseMigrationInputText(text);
+      setMigrationPreview(parsed.items, parsed.invalidCount);
+      showToast(parsed.items.length ? '迁移链接已解析到预览' : '未识别到有效迁移条目', parsed.items.length ? 'success' : 'error');
     });
 
     $('#qrFileInput')?.addEventListener('change', async (e) => {
@@ -1751,6 +2289,91 @@
       reader.readAsDataURL(file);
       closeImportMenu();
     });
+
+    // 迁移页面
+    $('#migrationParseBtn')?.addEventListener('click', () => {
+      const text = $('#migrationInput')?.value || '';
+      const parsed = parseMigrationInputText(text);
+      setMigrationPreview(parsed.items, parsed.invalidCount);
+      if (parsed.items.length === 0) {
+        showToast('未识别到可导入条目', 'error');
+      }
+    });
+
+    $('#migrationClearBtn')?.addEventListener('click', () => {
+      const input = $('#migrationInput');
+      if (input) input.value = '';
+      setMigrationPreview([], 0);
+    });
+
+    $('#migrationApplyBtn')?.addEventListener('click', async () => {
+      await applyMigrationImport();
+    });
+
+    $('#migrationPasteQuickBtn')?.addEventListener('click', async () => {
+      const text = await readClipboardTextRaw('migration-paste-quick');
+      if (!text) {
+        showToast('剪贴板为空或无可识别文本', 'error');
+        return;
+      }
+      const input = $('#migrationInput');
+      if (input) input.value = text;
+      const parsed = parseMigrationInputText(text);
+      setMigrationPreview(parsed.items, parsed.invalidCount);
+      showToast(parsed.items.length ? '已解析到迁移预览' : '未识别到可导入条目', parsed.items.length ? 'success' : 'error');
+    });
+
+    $('#migrationQrFileBtn')?.addEventListener('click', () => {
+      $('#migrationQrFileInput')?.click();
+    });
+
+    $('#migrationQrFileInput')?.addEventListener('change', async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      try {
+        const imageData = await readFileAsDataUrl(file);
+        const parsedItems = await parseImportCandidatesFromImageData(imageData, 'migration-qr-file');
+        const normalized = parsedItems.map(item => normalizeMigrationCandidate(item)).filter(Boolean);
+        if (normalized.length === 0) {
+          showToast('二维码未识别到有效迁移条目', 'error');
+        } else {
+          setMigrationPreview(normalized, 0);
+          showToast(`二维码已加入预览（${normalized.length} 条）`, 'success');
+        }
+      } catch (_) {
+        showToast('读取二维码图片失败', 'error');
+      } finally {
+        e.target.value = '';
+      }
+    });
+
+    const handleMigrationPasteImage = async (e) => {
+      if (e.defaultPrevented) return;
+      if (currentView !== 'migration') return;
+      const items = Array.from(e.clipboardData?.items || []);
+      const imageItem = items.find(item => item.kind === 'file' && item.type.startsWith('image/'));
+      if (!imageItem) return;
+
+      e.preventDefault();
+      e.stopPropagation();
+      const file = imageItem.getAsFile();
+      if (!file) return;
+      try {
+        const imageData = await readFileAsDataUrl(file);
+        const parsedItems = await parseImportCandidatesFromImageData(imageData, 'migration-paste-image');
+        const normalized = parsedItems.map(item => normalizeMigrationCandidate(item)).filter(Boolean);
+        if (normalized.length === 0) {
+          showToast('粘贴图片中未识别到有效迁移条目', 'error');
+          return;
+        }
+        setMigrationPreview(normalized, 0);
+        showToast(`已从粘贴图片识别 ${normalized.length} 条`, 'success');
+      } catch (_) {
+        showToast('处理粘贴图片失败', 'error');
+      }
+    };
+
+    document.addEventListener('paste', handleMigrationPasteImage);
 
     // 一键导入按钮
     $('#applyClipboardBtn')?.addEventListener('click', applyClipboardImport);
@@ -1793,8 +2416,8 @@
     });
 
     // 关闭弹窗
-    $('#closeDialog').addEventListener('click', () => {
-      closeAddDialogWithGuard();
+    $('#closeDialog').addEventListener('click', async () => {
+      await closeAddDialogWithGuard();
     });
 
     $('#addDialog').addEventListener('keydown', (e) => {
@@ -1803,10 +2426,10 @@
       }
     });
 
-    $('#addDialog').addEventListener('cancel', (e) => {
+    $('#addDialog').addEventListener('cancel', async (e) => {
       e.preventDefault();
       if (addDialogEscapeRequested) {
-        closeAddDialogWithGuard();
+        await closeAddDialogWithGuard();
       }
       addDialogEscapeRequested = false;
     });
