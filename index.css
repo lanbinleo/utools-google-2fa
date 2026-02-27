@@ -697,6 +697,23 @@ html, body {
   background: var(--accent-hover);
 }
 
+.btn-muted {
+  padding: 10px 20px;
+  border: 1px solid var(--border);
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-muted:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .btn-danger {
   padding: 10px 20px;
   border: none;
@@ -1043,6 +1060,32 @@ html, body {
   margin-top: 20px;
 }
 
+.confirm-dialog {
+  max-width: 360px;
+}
+
+.confirm-dialog-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.confirm-dialog-content h3 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.confirm-dialog-message {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.confirm-dialog-actions {
+  margin-top: 4px;
+}
+
 .import-menu {
   display: grid;
   gap: 10px;
@@ -1221,5 +1264,20 @@ html, body {
   .dialog-content {
     height: 100%;
     max-height: none;
+  }
+
+  .dialog.confirm-dialog {
+    width: 92%;
+    height: auto;
+    max-width: 360px;
+    max-height: none;
+    border-radius: var(--radius);
+    transform: translate(-50%, -50%);
+    top: 50%;
+    left: 50%;
+  }
+
+  .confirm-dialog .dialog-content {
+    height: auto;
   }
 }

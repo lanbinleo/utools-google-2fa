@@ -667,6 +667,70 @@
     return true;
   }
 
+  function getEntryDisplayName(entry) {
+    if (!entry) return '该条目';
+    return (entry.name || entry.issuer || '该条目').trim();
+  }
+
+  function confirmDeleteEntry(entry) {
+    const dialog = $('#deleteConfirmDialog');
+    const confirmBtn = $('#confirmDeleteBtn');
+    const cancelBtn = $('#cancelDeleteBtn');
+    const messageEl = $('#deleteConfirmMessage');
+
+    if (!dialog || !confirmBtn || !cancelBtn || !messageEl) {
+      return Promise.resolve(confirm('确定要删除吗？'));
+    }
+
+    const displayName = getEntryDisplayName(entry);
+    messageEl.textContent = `确定删除「${displayName}」吗？删除后不可恢复。`;
+
+    return new Promise((resolve) => {
+      let settled = false;
+
+      const cleanup = () => {
+        confirmBtn.removeEventListener('click', onConfirm);
+        cancelBtn.removeEventListener('click', onCancel);
+        dialog.removeEventListener('cancel', onDialogCancel);
+        dialog.removeEventListener('click', onDialogClick);
+      };
+
+      const done = (result) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        if (dialog.open) dialog.close();
+        resolve(result);
+      };
+
+      const onConfirm = () => done(true);
+      const onCancel = () => done(false);
+      const onDialogCancel = (e) => {
+        e.preventDefault();
+        done(false);
+      };
+      const onDialogClick = (e) => {
+        // 禁止点击遮罩关闭，避免误删场景的误触。
+        if (e.target === dialog) {
+          e.preventDefault();
+        }
+      };
+
+      confirmBtn.addEventListener('click', onConfirm);
+      cancelBtn.addEventListener('click', onCancel);
+      dialog.addEventListener('cancel', onDialogCancel);
+      dialog.addEventListener('click', onDialogClick);
+      try {
+        dialog.showModal();
+      } catch (e) {
+        cleanup();
+        resolve(confirm('确定要删除吗？'));
+        return;
+      }
+      cancelBtn.focus();
+    });
+  }
+
   function getAllTags() {
     return Array.from(new Set(
       entries.flatMap(entry => normalizeTags(entry.tags))
@@ -991,7 +1055,7 @@
 
     // 绑定菜单项事件
     menu.querySelectorAll('.context-item').forEach(item => {
-      item.addEventListener('click', () => {
+      item.addEventListener('click', async () => {
         const action = item.dataset.action;
         const entry = entries.find(e => e.id === id);
 
@@ -1016,9 +1080,12 @@
         } else if (action === 'edit') {
           editEntry(id);
         } else if (action === 'delete') {
-          if (confirm('确定要删除吗？')) {
+          menu.remove();
+          const confirmed = await confirmDeleteEntry(entry);
+          if (confirmed) {
             deleteEntry(id);
           }
+          return;
         }
 
         menu.remove();
@@ -1806,8 +1873,10 @@
     });
 
     // 删除按钮
-    $('#deleteBtn').addEventListener('click', () => {
-      if (editingId && confirm('确定要删除吗？')) {
+    $('#deleteBtn').addEventListener('click', async () => {
+      const entry = entries.find(e => e.id === editingId);
+      const confirmed = editingId ? await confirmDeleteEntry(entry) : false;
+      if (editingId && confirmed) {
         deleteEntry(editingId);
         $('#addDialog').close();
       }

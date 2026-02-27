@@ -224,6 +224,18 @@
       </div>
     </dialog>
 
+    <!-- 删除确认弹窗 -->
+    <dialog id="deleteConfirmDialog" class="dialog confirm-dialog" aria-labelledby="deleteConfirmTitle">
+      <div class="dialog-content confirm-dialog-content">
+        <h3 id="deleteConfirmTitle">确认删除</h3>
+        <p id="deleteConfirmMessage" class="confirm-dialog-message">确定删除该条目吗？删除后不可恢复。</p>
+        <div class="dialog-actions confirm-dialog-actions">
+          <button type="button" class="btn-muted" id="cancelDeleteBtn">取消</button>
+          <button type="button" class="btn-danger" id="confirmDeleteBtn">删除</button>
+        </div>
+      </div>
+    </dialog>
+
     <!-- Toast 提示 -->
     <div id="toast" class="toast"></div>
   </div>
