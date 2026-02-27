@@ -7,7 +7,30 @@ Notes:
 1. `alpha-*` sections are retrospective and grouped from commit history (no historical tags).
 2. `1.0.0` release point is fixed at `2026-02-27 10:50:15 UTC`.
 
-## 1.1.0 (Current)
+## 1.1.1
+
+Date: `2026-02-27`
+
+### Added
+
+1. Added Settings entry as a top-right icon button.
+2. Added settings data workspace for export/import operations.
+3. Added export formats: `otpauth-migration` / `JSON` / `TXT` / special full backup file.
+4. Added full-backup import flow with in-app confirmation before overwrite.
+5. Added runtime footer metadata on settings page: version, author, GitHub link.
+
+### Changed
+
+1. Removed old text-based `settings` nav item from top navigation.
+2. Settings page interaction is now backup-oriented instead of theme/debug toggles.
+3. Gear icon sizing/styling was normalized to match header icon system.
+
+### Fixed
+
+1. Fixed toast layering under modal backdrop by switching toast to top-layer dialog behavior.
+2. Fixed icon color mismatch in dark mode by unifying with `currentColor`.
+
+## 1.1.0
 
 Date: after `2026-02-27 10:50:15 UTC`
 

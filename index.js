@@ -511,10 +511,346 @@
     return [];
   }
 
+  function bytesToBase64(bytes) {
+    let binary = '';
+    const chunkSize = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.slice(i, i + chunkSize);
+      binary += String.fromCharCode(...chunk);
+    }
+    return btoa(binary);
+  }
+
+  function utf8ToBytes(text) {
+    if (typeof TextEncoder !== 'undefined') {
+      return new TextEncoder().encode(String(text || ''));
+    }
+    const encoded = unescape(encodeURIComponent(String(text || '')));
+    return Uint8Array.from(encoded, char => char.charCodeAt(0));
+  }
+
+  function encodeVarint(value) {
+    let v = BigInt(Math.max(0, Number(value) || 0));
+    const out = [];
+    while (v >= 0x80n) {
+      out.push(Number((v & 0x7fn) | 0x80n));
+      v >>= 7n;
+    }
+    out.push(Number(v));
+    return Uint8Array.from(out);
+  }
+
+  function concatBytes(chunks) {
+    const total = chunks.reduce((sum, chunk) => sum + (chunk?.length || 0), 0);
+    const result = new Uint8Array(total);
+    let offset = 0;
+    chunks.forEach(chunk => {
+      if (!chunk || !chunk.length) return;
+      result.set(chunk, offset);
+      offset += chunk.length;
+    });
+    return result;
+  }
+
+  function encodeLengthDelimitedField(fieldNumber, dataBytes) {
+    const tag = encodeVarint((fieldNumber << 3) | 2);
+    const len = encodeVarint(dataBytes.length);
+    return concatBytes([tag, len, dataBytes]);
+  }
+
+  function encodeVarintField(fieldNumber, value) {
+    const tag = encodeVarint((fieldNumber << 3) | 0);
+    const encodedValue = encodeVarint(value);
+    return concatBytes([tag, encodedValue]);
+  }
+
+  function decodeSecretToBytes(secret) {
+    const cleaned = String(secret || '').replace(/\s+/g, '').toUpperCase();
+    if (!cleaned) return new Uint8Array(0);
+
+    if (/^[A-Z2-7]+=*$/.test(cleaned)) {
+      return base32ToBytes(cleaned);
+    }
+    if (/^[0-9A-F]+$/.test(cleaned) && cleaned.length % 2 === 0) {
+      return hexToBytes(cleaned);
+    }
+    if (/^[+/A-Z0-9]+=*$/.test(cleaned)) {
+      const decoded = decodeBase64ToBytes(cleaned);
+      if (decoded && decoded.length) return decoded;
+    }
+    return base32ToBytes(cleaned);
+  }
+
+  function buildOtpauthUrl(entry) {
+    const safeType = (entry.type || 'totp').toLowerCase() === 'hotp' ? 'hotp' : 'totp';
+    const name = (entry.name || 'Imported').trim() || 'Imported';
+    const issuer = (entry.issuer || '').trim();
+    const secretBytes = decodeSecretToBytes(entry.secret);
+    if (!secretBytes.length) return '';
+    const secret = bytesToBase32(secretBytes);
+
+    const label = issuer ? `${issuer}:${name}` : name;
+    const query = new URLSearchParams();
+    query.set('secret', secret);
+    if (issuer) query.set('issuer', issuer);
+    query.set('algorithm', String(entry.algorithm || 'SHA1').toUpperCase());
+    query.set('digits', String(parseInt(entry.digits, 10) || 6));
+
+    if (safeType === 'hotp') {
+      query.set('counter', String(Math.max(0, parseInt(entry.counter, 10) || 0)));
+    } else {
+      query.set('period', String(Math.max(1, parseInt(entry.period, 10) || 30)));
+    }
+
+    return `otpauth://${safeType}/${encodeURIComponent(label)}?${query.toString()}`;
+  }
+
+  function buildMigrationUrlFromEntries(sourceEntries) {
+    const algorithmMap = { SHA1: 1, SHA256: 2, SHA512: 3, MD5: 4 };
+    const chunks = [];
+
+    sourceEntries.forEach(entry => {
+      const secretBytes = decodeSecretToBytes(entry.secret);
+      if (!secretBytes.length) return;
+
+      const itemChunks = [];
+      itemChunks.push(encodeLengthDelimitedField(1, secretBytes));
+      itemChunks.push(encodeLengthDelimitedField(2, utf8ToBytes(entry.name || 'Imported')));
+      if (entry.issuer) {
+        itemChunks.push(encodeLengthDelimitedField(3, utf8ToBytes(entry.issuer)));
+      }
+      itemChunks.push(encodeVarintField(4, algorithmMap[String(entry.algorithm || 'SHA1').toUpperCase()] || 1));
+      itemChunks.push(encodeVarintField(5, parseInt(entry.digits, 10) === 8 ? 2 : 1));
+      itemChunks.push(encodeVarintField(6, (entry.type || 'totp').toLowerCase() === 'hotp' ? 1 : 2));
+      if ((entry.type || 'totp').toLowerCase() === 'hotp') {
+        itemChunks.push(encodeVarintField(7, Math.max(0, parseInt(entry.counter, 10) || 0)));
+      }
+
+      const itemBytes = concatBytes(itemChunks);
+      chunks.push(encodeLengthDelimitedField(1, itemBytes));
+    });
+
+    if (!chunks.length) return '';
+    const payload = concatBytes(chunks);
+    const data = bytesToBase64(payload);
+    return `otpauth-migration://offline?data=${encodeURIComponent(data)}`;
+  }
+
+  function buildSpecialBackupText() {
+    const backupPayload = {
+      schema: 'google2fa-backup-v1',
+      exportedAt: new Date().toISOString(),
+      version: appMeta.version || '-',
+      theme: localStorage.getItem(THEME_KEY) || 'light',
+      entries
+    };
+    const jsonBytes = utf8ToBytes(JSON.stringify(backupPayload));
+    return `${BACKUP_MAGIC}\n${bytesToBase64(jsonBytes)}`;
+  }
+
+  function parseSpecialBackupText(rawText) {
+    if (typeof rawText !== 'string') {
+      throw new Error('备份文件为空');
+    }
+
+    const normalized = rawText.replace(/\r/g, '');
+    const firstNewlineIndex = normalized.indexOf('\n');
+    if (firstNewlineIndex <= 0) {
+      throw new Error('备份文件格式不正确');
+    }
+
+    const magic = normalized.slice(0, firstNewlineIndex).trim();
+    if (magic !== BACKUP_MAGIC) {
+      throw new Error('不是受支持的备份文件');
+    }
+
+    const encodedPayload = normalized.slice(firstNewlineIndex + 1).trim();
+    const payloadBytes = decodeBase64ToBytes(encodedPayload);
+    if (!payloadBytes || !payloadBytes.length) {
+      throw new Error('备份文件内容损坏');
+    }
+
+    let payload = null;
+    try {
+      payload = JSON.parse(decodeUtf8Bytes(payloadBytes));
+    } catch (_) {
+      throw new Error('备份内容不是有效 JSON');
+    }
+
+    if (!payload || payload.schema !== 'google2fa-backup-v1' || !Array.isArray(payload.entries)) {
+      throw new Error('备份版本不受支持');
+    }
+
+    return payload;
+  }
+
+  function readFileAsText(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error || new Error('读取文件失败'));
+      reader.readAsText(file, 'utf-8');
+    });
+  }
+
+  function downloadTextFile(filename, content, mimeType = 'text/plain;charset=utf-8') {
+    const blob = new Blob([content], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+  }
+
+  function getExportTimestamp() {
+    return new Date().toISOString().replace(/[:.]/g, '-');
+  }
+
+  async function readRuntimeMetaFromBridgeOrFetch(path) {
+    try {
+      if (window.utoolsBridge && window.utoolsBridge.readText) {
+        const bridgeValue = window.utoolsBridge.readText(path);
+        const text = (bridgeValue && typeof bridgeValue.then === 'function')
+          ? await bridgeValue
+          : bridgeValue;
+        if (typeof text === 'string' && text.trim()) return text;
+      }
+    } catch (_) {
+      // ignore
+    }
+
+    try {
+      const response = await fetch('./' + path + '?_=' + Date.now());
+      if (response.ok) {
+        const text = await response.text();
+        if (typeof text === 'string' && text.trim()) return text;
+      }
+    } catch (_) {
+      // ignore
+    }
+
+    return '';
+  }
+
+  async function loadAppMeta() {
+    const next = { version: '-', author: '-', github: '' };
+    const versionText = await readRuntimeMetaFromBridgeOrFetch('VERSION');
+    if (versionText) {
+      next.version = versionText.split(/\r?\n/)[0].trim() || '-';
+    }
+
+    const pluginText = await readRuntimeMetaFromBridgeOrFetch('plugin.json');
+    if (pluginText) {
+      try {
+        const parsed = JSON.parse(pluginText);
+        next.author = parsed.author || parsed.pluginAuthor || '-';
+        next.github = parsed.homepage || parsed.repository || parsed.source || '';
+      } catch (_) {
+        // ignore
+      }
+    }
+
+    appMeta = next;
+    renderSettingsView();
+  }
+
+  async function exportFromSettings(format) {
+    if (!entries.length) {
+      showToast('当前没有可导出的条目', 'error');
+      return;
+    }
+
+    const timestamp = getExportTimestamp();
+    if (format === 'migration') {
+      const migrationUrl = buildMigrationUrlFromEntries(entries);
+      if (!migrationUrl) {
+        showToast('无法生成 migration 数据，请检查密钥格式', 'error');
+        return;
+      }
+      downloadTextFile(`google2fa-migration-${timestamp}.txt`, migrationUrl + '\n');
+      showToast('已导出 migration 文件', 'success');
+      return;
+    }
+
+    if (format === 'json') {
+      const payload = {
+        schema: 'google2fa-export-json-v1',
+        exportedAt: new Date().toISOString(),
+        entries: entries.map(entry => ({
+          name: entry.name || '',
+          issuer: entry.issuer || '',
+          secret: entry.secret || '',
+          algorithm: entry.algorithm || 'SHA1',
+          digits: parseInt(entry.digits, 10) || 6,
+          type: entry.type || 'totp',
+          period: parseInt(entry.period, 10) || 30,
+          counter: parseInt(entry.counter, 10) || 0
+        }))
+      };
+      downloadTextFile(`google2fa-export-${timestamp}.json`, JSON.stringify(payload, null, 2), 'application/json;charset=utf-8');
+      showToast('已导出 JSON 文件', 'success');
+      return;
+    }
+
+    if (format === 'txt') {
+      const lines = entries
+        .map(entry => buildOtpauthUrl(entry))
+        .filter(Boolean);
+      if (!lines.length) {
+        showToast('没有可导出的 otpauth 数据', 'error');
+        return;
+      }
+      downloadTextFile(`google2fa-otpauth-${timestamp}.txt`, lines.join('\n') + '\n');
+      showToast('已导出 TXT 文件', 'success');
+      return;
+    }
+
+    if (format === 'backup') {
+      const backupText = buildSpecialBackupText();
+      downloadTextFile(`google2fa-backup-${timestamp}.g2fabak`, backupText + '\n');
+      showToast('已导出备份文件', 'success');
+      return;
+    }
+
+    showToast('未知导出格式', 'error');
+  }
+
+  async function importSpecialBackupFile(file) {
+    const text = await readFileAsText(file);
+    const payload = parseSpecialBackupText(text);
+    const nextEntries = payload.entries.map(normalizeEntry).filter(Boolean);
+
+    const confirmed = await showAppConfirm({
+      title: '确认全量导入',
+      message: `将覆盖当前 ${entries.length} 条数据并导入 ${nextEntries.length} 条，是否继续？`,
+      confirmText: '覆盖导入',
+      confirmVariant: 'danger'
+    });
+    if (!confirmed) return;
+
+    entries = nextEntries;
+    saveEntries(entries);
+
+    const theme = payload.theme === 'dark' ? 'dark' : 'light';
+    localStorage.setItem(THEME_KEY, theme);
+    document.body.dataset.theme = theme;
+
+    activeFilterTags = [];
+    setSelectedTags([]);
+    resetMigrationFlow();
+    renderCurrentView();
+    renderSettingsView();
+    showToast(`导入完成，共 ${nextEntries.length} 条`, 'success');
+  }
+
   // ==================== 数据存储 ====================
 
   const STORAGE_KEY = 'google2fa_entries';
   const THEME_KEY = 'google2fa_theme';
+  const BACKUP_MAGIC = 'G2FA_BACKUP_V1';
 
   function normalizeTags(tags) {
     if (!Array.isArray(tags)) return [];
@@ -561,6 +897,7 @@
   let editingId = null;
   let refreshInterval = null;
   let toastTimer = null;
+  let toastCloseTimer = null;
   let addDialogInitialState = null;
   let addDialogEscapeRequested = false;
   let selectedTags = [];
@@ -569,6 +906,13 @@
   const emptySectionUserExpanded = {};
   let migrationPreviewItems = [];
   let migrationInvalidCount = 0;
+  let migrationFlowStep = 1;
+  let migrationLastImportResult = null;
+  let appMeta = {
+    version: '-',
+    author: '-',
+    github: ''
+  };
 
   // ==================== DOM 元素 ====================
 
@@ -913,13 +1257,110 @@
   function setMigrationPreview(items, invalidCount = 0) {
     migrationPreviewItems = Array.isArray(items) ? items : [];
     migrationInvalidCount = Number.isFinite(invalidCount) && invalidCount >= 0 ? invalidCount : 0;
+    const applyBtn = $('#migrationApplyBtn');
+    if (applyBtn) {
+      applyBtn.disabled = migrationPreviewItems.length === 0;
+    }
     renderMigrationPreview();
+  }
+
+  function setMigrationStep(step) {
+    const normalized = [1, 2, 3].includes(step) ? step : 1;
+    migrationFlowStep = normalized;
+
+    $$('#migrationView .migration-step').forEach(node => {
+      node.classList.toggle('active', Number(node.dataset.step) === normalized);
+    });
+    $$('#migrationView .migration-step-indicator').forEach(node => {
+      const markerStep = Number(node.dataset.stepMarker);
+      node.classList.toggle('active', markerStep === normalized);
+      node.classList.toggle('done', markerStep < normalized);
+    });
+  }
+
+  function resetMigrationFlow(options = {}) {
+    const keepInput = !!options.keepInput;
+    if (!keepInput) {
+      const input = $('#migrationInput');
+      if (input) input.value = '';
+    }
+    migrationLastImportResult = null;
+    setMigrationPreview([], 0);
+    setMigrationStep(1);
+    renderMigrationLanding();
+  }
+
+  function renderMigrationLanding() {
+    const summary = $('#migrationLandingSummary');
+    const details = $('#migrationLandingDetails');
+    if (!summary || !details) return;
+
+    if (!migrationLastImportResult) {
+      summary.textContent = '导入完成后会在这里展示结果。';
+      details.innerHTML = '<div class="migration-card-desc">你可以继续导入，或返回首页查看结果。</div>';
+      return;
+    }
+
+    const {
+      importedCount = 0,
+      replacedCount = 0,
+      skippedCount = 0,
+      failedCount = 0,
+      strategy = 'skip'
+    } = migrationLastImportResult;
+
+    summary.textContent = `导入成功 ${importedCount} 条，策略：${strategy}。`;
+    details.innerHTML = [
+      `<div class="migration-preview-item"><div class="migration-preview-name">新增/更新</div><span class="migration-preview-type">${importedCount}</span></div>`,
+      `<div class="migration-preview-item"><div class="migration-preview-name">覆盖</div><span class="migration-preview-type">${replacedCount}</span></div>`,
+      `<div class="migration-preview-item"><div class="migration-preview-name">跳过</div><span class="migration-preview-type">${skippedCount}</span></div>`,
+      `<div class="migration-preview-item"><div class="migration-preview-name">失败</div><span class="migration-preview-type">${failedCount}</span></div>`
+    ].join('');
+  }
+
+  function parseMigrationInputToPreview(text, options = {}) {
+    const silent = !!options.silent;
+    migrationLastImportResult = null;
+    renderMigrationLanding();
+    const parsed = parseMigrationInputText(text);
+    setMigrationPreview(parsed.items, parsed.invalidCount);
+    if (parsed.items.length > 0) {
+      setMigrationStep(2);
+      if (!silent) {
+        showToast(`已解析 ${parsed.items.length} 条，进入预览`, 'success');
+      }
+    } else {
+      setMigrationStep(1);
+      if (!silent) {
+        showToast('未识别到可导入条目', 'error');
+      }
+    }
+    return parsed;
+  }
+
+  async function parseMigrationImageToPreview(imageData, source = 'migration-image') {
+    migrationLastImportResult = null;
+    renderMigrationLanding();
+    const parsedItems = await parseImportCandidatesFromImageData(imageData, source);
+    const normalized = parsedItems.map(item => normalizeMigrationCandidate(item)).filter(Boolean);
+    if (!normalized.length) {
+      showToast('图片中未识别到有效迁移条目', 'error');
+      return [];
+    }
+    setMigrationPreview(normalized, 0);
+    setMigrationStep(2);
+    showToast(`已识别 ${normalized.length} 条，进入预览`, 'success');
+    return normalized;
   }
 
   function renderMigrationPreview() {
     const previewList = $('#migrationPreviewList');
     const summary = $('#migrationPreviewSummary');
     if (!previewList || !summary) return;
+    const applyBtn = $('#migrationApplyBtn');
+    if (applyBtn) {
+      applyBtn.disabled = migrationPreviewItems.length === 0;
+    }
 
     if (!migrationPreviewItems.length) {
       summary.textContent = migrationInvalidCount > 0
@@ -947,6 +1388,34 @@
       badge.textContent = `当前条目 ${entries.length}`;
     }
     renderMigrationPreview();
+    renderMigrationLanding();
+    setMigrationStep(migrationFlowStep);
+  }
+
+  function renderSettingsView() {
+    const summary = $('#settingsDataSummary');
+    if (summary) {
+      summary.textContent = `当前共有 ${entries.length} 条验证码条目。`;
+    }
+
+    const versionText = $('#settingsVersionText');
+    if (versionText) {
+      versionText.textContent = `Version: ${appMeta.version || '-'}`;
+    }
+
+    const authorText = $('#settingsAuthorText');
+    if (authorText) {
+      authorText.textContent = `Author: ${appMeta.author || '-'}`;
+    }
+
+    const githubLink = $('#settingsGithubLink');
+    if (githubLink) {
+      const href = appMeta.github || '';
+      githubLink.textContent = href ? 'GitHub' : 'GitHub: N/A';
+      githubLink.href = href || '#';
+      githubLink.style.pointerEvents = href ? '' : 'none';
+      githubLink.style.opacity = href ? '' : '0.5';
+    }
   }
 
   function buildImportedName(baseName, issuer, sourceEntries) {
@@ -1031,18 +1500,30 @@
       }
     }
 
-    entries = draft;
-    saveEntries(entries);
-    renderCurrentView();
-    setMigrationPreview([], 0);
-
     const resultMessage = [
       `导入 ${importedCount} 条`,
       replacedCount ? `覆盖 ${replacedCount} 条` : '',
       skippedCount ? `跳过 ${skippedCount} 条` : '',
       failedCount ? `失败 ${failedCount} 条` : ''
     ].filter(Boolean).join('，');
-    showToast(resultMessage, importedCount > 0 ? 'success' : 'error');
+    if (importedCount <= 0) {
+      showToast(resultMessage || '没有成功导入的条目', 'error');
+      return;
+    }
+
+    entries = draft;
+    saveEntries(entries);
+    migrationLastImportResult = {
+      importedCount,
+      replacedCount,
+      skippedCount,
+      failedCount,
+      strategy
+    };
+    setMigrationPreview([], 0);
+    setMigrationStep(3);
+    renderMigrationView();
+    showToast(resultMessage, 'success');
   }
 
   // 刷新验证码
@@ -1340,15 +1821,19 @@
     $$('.nav-btn').forEach(btn => {
       btn.classList.toggle('active', btn.dataset.view === view);
     });
+    const settingsBtn = $('#settingsBtn');
+    if (settingsBtn) {
+      settingsBtn.classList.toggle('active', view === 'settings');
+    }
 
-    // 管理页不显示排序控件
+    // 仅首页显示排序；仅首页和管理显示工具栏
     const sortSelect = $('#sortSelect');
     if (sortSelect) {
       sortSelect.style.display = view === 'home' ? '' : 'none';
     }
     const toolbar = $('.toolbar');
     if (toolbar) {
-      toolbar.style.display = view === 'migration' ? 'none' : '';
+      toolbar.style.display = (view === 'home' || view === 'manage') ? '' : 'none';
     }
 
     // 更新视图显示 - 带动画
@@ -1378,6 +1863,9 @@
     const isDark = document.body.dataset.theme === 'dark';
     document.body.dataset.theme = isDark ? 'light' : 'dark';
     localStorage.setItem(THEME_KEY, document.body.dataset.theme);
+    if (currentView === 'settings') {
+      renderSettingsView();
+    }
   }
 
   // 初始化主题
@@ -1390,14 +1878,34 @@
   // 显示 Toast
   function showToast(message, type = '') {
     const toast = $('#toast');
+    if (!toast) return;
+    if (toastCloseTimer) {
+      clearTimeout(toastCloseTimer);
+      toastCloseTimer = null;
+    }
     toast.textContent = message;
     toast.className = 'toast ' + type;
-    toast.classList.add('show');
+    if (typeof toast.show === 'function' && !toast.open) {
+      toast.show();
+    } else if (!toast.open) {
+      toast.setAttribute('open', '');
+    }
+    requestAnimationFrame(() => {
+      toast.classList.add('show');
+    });
     if (toastTimer) {
       clearTimeout(toastTimer);
     }
     toastTimer = setTimeout(() => {
       toast.classList.remove('show');
+      toastCloseTimer = setTimeout(() => {
+        if (typeof toast.close === 'function' && toast.open) {
+          toast.close();
+        } else if (toast.open) {
+          toast.removeAttribute('open');
+        }
+        toastCloseTimer = null;
+      }, 220);
       toastTimer = null;
     }, 2500);
   }
@@ -1610,6 +2118,10 @@
     }
     if (currentView === 'migration') {
       renderMigrationView();
+      return;
+    }
+    if (currentView === 'settings') {
+      renderSettingsView();
       return;
     }
     renderFilterTags();
@@ -2164,6 +2676,7 @@
 
     // 初始化主题
     initTheme();
+    loadAppMeta();
 
     // 导航切换
     $$('.nav-btn').forEach(btn => {
@@ -2229,8 +2742,40 @@
       if (id) showContextMenu(e, id);
     });
 
-    // 主题切换
+    // 主题与设置
     $('#themeBtn').addEventListener('click', toggleTheme);
+    $('#settingsBtn')?.addEventListener('click', () => {
+      switchView('settings');
+    });
+    $('#settingsExportBtn')?.addEventListener('click', async () => {
+      const format = $('#settingsExportFormat')?.value || 'backup';
+      await exportFromSettings(format);
+    });
+    $('#settingsImportBtn')?.addEventListener('click', () => {
+      $('#settingsImportInput')?.click();
+    });
+    $('#settingsImportInput')?.addEventListener('change', async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      try {
+        await importSpecialBackupFile(file);
+      } catch (error) {
+        showToast(errorToMessage(error) || '导入失败', 'error');
+      } finally {
+        e.target.value = '';
+      }
+    });
+    $('#settingsGithubLink')?.addEventListener('click', (e) => {
+      const url = appMeta.github || '';
+      if (!url) {
+        e.preventDefault();
+        return;
+      }
+      if (window.utoolsBridge && window.utoolsBridge.openExternal) {
+        e.preventDefault();
+        window.utoolsBridge.openExternal(url);
+      }
+    });
 
     // 添加按钮 - 新建时自动读取剪贴板
     $('#addBtn').addEventListener('click', async () => {
@@ -2268,14 +2813,12 @@
       switchView('migration');
       const text = await readClipboardTextRaw('import-migration-btn');
       if (!text) {
-        showToast('请复制 otpauth-migration 链接后重试', 'error');
+        showToast('请先复制迁移链接或 migration data', 'error');
         return;
       }
       const input = $('#migrationInput');
       if (input) input.value = text;
-      const parsed = parseMigrationInputText(text);
-      setMigrationPreview(parsed.items, parsed.invalidCount);
-      showToast(parsed.items.length ? '迁移链接已解析到预览' : '未识别到有效迁移条目', parsed.items.length ? 'success' : 'error');
+      parseMigrationInputToPreview(text);
     });
 
     $('#qrFileInput')?.addEventListener('change', async (e) => {
@@ -2293,21 +2836,29 @@
     // 迁移页面
     $('#migrationParseBtn')?.addEventListener('click', () => {
       const text = $('#migrationInput')?.value || '';
-      const parsed = parseMigrationInputText(text);
-      setMigrationPreview(parsed.items, parsed.invalidCount);
-      if (parsed.items.length === 0) {
-        showToast('未识别到可导入条目', 'error');
-      }
+      parseMigrationInputToPreview(text);
     });
 
     $('#migrationClearBtn')?.addEventListener('click', () => {
-      const input = $('#migrationInput');
-      if (input) input.value = '';
-      setMigrationPreview([], 0);
+      resetMigrationFlow();
     });
 
     $('#migrationApplyBtn')?.addEventListener('click', async () => {
       await applyMigrationImport();
+    });
+
+    $('#migrationBackBtn')?.addEventListener('click', () => {
+      setMigrationStep(1);
+      $('#migrationInput')?.focus();
+    });
+
+    $('#migrationRestartBtn')?.addEventListener('click', () => {
+      resetMigrationFlow();
+      $('#migrationInput')?.focus();
+    });
+
+    $('#migrationGoHomeBtn')?.addEventListener('click', () => {
+      switchView('home');
     });
 
     $('#migrationPasteQuickBtn')?.addEventListener('click', async () => {
@@ -2318,9 +2869,7 @@
       }
       const input = $('#migrationInput');
       if (input) input.value = text;
-      const parsed = parseMigrationInputText(text);
-      setMigrationPreview(parsed.items, parsed.invalidCount);
-      showToast(parsed.items.length ? '已解析到迁移预览' : '未识别到可导入条目', parsed.items.length ? 'success' : 'error');
+      parseMigrationInputToPreview(text);
     });
 
     $('#migrationQrFileBtn')?.addEventListener('click', () => {
@@ -2332,18 +2881,19 @@
       if (!file) return;
       try {
         const imageData = await readFileAsDataUrl(file);
-        const parsedItems = await parseImportCandidatesFromImageData(imageData, 'migration-qr-file');
-        const normalized = parsedItems.map(item => normalizeMigrationCandidate(item)).filter(Boolean);
-        if (normalized.length === 0) {
-          showToast('二维码未识别到有效迁移条目', 'error');
-        } else {
-          setMigrationPreview(normalized, 0);
-          showToast(`二维码已加入预览（${normalized.length} 条）`, 'success');
-        }
+        await parseMigrationImageToPreview(imageData, 'migration-qr-file');
       } catch (_) {
         showToast('读取二维码图片失败', 'error');
       } finally {
         e.target.value = '';
+      }
+    });
+
+    $('#migrationInput')?.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        const text = $('#migrationInput')?.value || '';
+        parseMigrationInputToPreview(text);
       }
     });
 
@@ -2360,14 +2910,7 @@
       if (!file) return;
       try {
         const imageData = await readFileAsDataUrl(file);
-        const parsedItems = await parseImportCandidatesFromImageData(imageData, 'migration-paste-image');
-        const normalized = parsedItems.map(item => normalizeMigrationCandidate(item)).filter(Boolean);
-        if (normalized.length === 0) {
-          showToast('粘贴图片中未识别到有效迁移条目', 'error');
-          return;
-        }
-        setMigrationPreview(normalized, 0);
-        showToast(`已从粘贴图片识别 ${normalized.length} 条`, 'success');
+        await parseMigrationImageToPreview(imageData, 'migration-paste-image');
       } catch (_) {
         showToast('处理粘贴图片失败', 'error');
       }

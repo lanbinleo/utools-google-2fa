@@ -1,6 +1,8 @@
 {
   "pluginName": "Google 2FA",
   "description": "简约高效的谷歌 2FA 验证器",
+  "author": "Huozi",
+  "homepage": "https://github.com/lanbinleo/utools-google-2fa",
   "logo": "logo.png",
   "main": "index.html",
   "preload": "preload.js",

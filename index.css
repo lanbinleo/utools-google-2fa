@@ -134,9 +134,19 @@ html, body {
   color: var(--accent);
 }
 
+.icon-btn.active {
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
 .icon {
   width: 20px;
   height: 20px;
+}
+
+#settingsBtn .settings-icon {
+  width: 19px;
+  height: 19px;
 }
 
 /* 工具栏 */
@@ -328,13 +338,6 @@ html, body {
   color: var(--text-muted);
 }
 
-.migration-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  padding-bottom: 12px;
-}
-
 .migration-card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -343,6 +346,53 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  margin-bottom: 12px;
+}
+
+.migration-flow-card {
+  min-height: 0;
+}
+
+.migration-stepper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.migration-step-indicator {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 4px 10px;
+  white-space: nowrap;
+}
+
+.migration-step-indicator.active {
+  border-color: var(--accent);
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+.migration-step-indicator.done {
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+
+.migration-step {
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.migration-step.active {
+  display: flex;
 }
 
 .migration-card h3 {
@@ -358,6 +408,13 @@ html, body {
 
 .migration-actions {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.migration-step-actions {
+  display: flex;
+  justify-content: flex-end;
   flex-wrap: wrap;
   gap: 8px;
 }
@@ -422,7 +479,7 @@ html, body {
 }
 
 .migration-preview-list {
-  max-height: 180px;
+  max-height: 220px;
   overflow-y: auto;
   border: 1px dashed var(--border);
   border-radius: var(--radius-sm);
@@ -463,6 +520,95 @@ html, body {
 
 .migration-field {
   gap: 6px;
+}
+
+/* 设置页面 */
+.settings-layout {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.settings-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 16px 18px;
+  margin-bottom: 12px;
+}
+
+.settings-card h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.settings-list {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-hover);
+  padding: 12px;
+}
+
+.settings-item-info {
+  min-width: 0;
+}
+
+.settings-item-title {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.settings-item-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.settings-item-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-item-controls .sort-select {
+  min-width: 220px;
+}
+
+.settings-footer {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+
+.settings-footer a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.settings-footer a:hover {
+  text-decoration: underline;
 }
 
 /* 验证码网格 */
@@ -625,7 +771,7 @@ html, body {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text-secondary);
 }
@@ -908,6 +1054,11 @@ html, body {
   background: var(--accent-hover);
 }
 
+.btn-primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .btn-muted {
   padding: 10px 20px;
   border: 1px solid var(--border);
@@ -923,6 +1074,11 @@ html, body {
 .btn-muted:hover {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.btn-muted:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .btn-danger {
@@ -1369,6 +1525,8 @@ html, body {
 /* Toast */
 .toast {
   position: fixed;
+  margin: 0;
+  border: none;
   bottom: 24px;
   left: 50%;
   transform: translateX(-50%) translateY(20px);
@@ -1379,8 +1537,11 @@ html, body {
   border-radius: var(--radius-sm);
   opacity: 0;
   pointer-events: none;
-  transition: all 0.2s ease;
-  z-index: 1000;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.toast::backdrop {
+  background: transparent;
 }
 
 .toast.show {
@@ -1430,8 +1591,8 @@ html, body {
     gap: 8px;
   }
 
-  .migration-grid {
-    grid-template-columns: 1fr;
+  .migration-stepper {
+    flex-wrap: nowrap;
   }
 
   .toolbar {
@@ -1461,6 +1622,16 @@ html, body {
   .manage-item-actions {
     grid-column: 1;
     justify-self: stretch;
+    justify-content: flex-start;
+  }
+
+  .settings-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .settings-item-controls {
+    width: 100%;
     justify-content: flex-start;
   }
 
