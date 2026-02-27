@@ -727,10 +727,15 @@
           // 临时生成并复制
           (async () => {
             try {
-              const code = await generateTOTP(entry.secret, {
-                digits: entry.digits,
-                period: entry.period
-              });
+              const options = {
+                algorithm: entry.algorithm || 'SHA1',
+                digits: entry.digits || 6,
+                period: entry.period || 30,
+                counter: entry.counter || 0
+              };
+              const code = entry.type === 'hotp'
+                ? await generateHOTP(entry.secret, options)
+                : await generateTOTP(entry.secret, options);
               copyToClipboard(code);
             } catch (e) {
               showToast('生成失败', 'error');
