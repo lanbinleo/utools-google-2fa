@@ -1548,23 +1548,10 @@
       summary.textContent = `当前共有 ${entries.length} 条验证码条目。`;
     }
 
-    const versionText = $('#settingsVersionText');
-    if (versionText) {
-      versionText.textContent = `Version: ${appMeta.version || '-'}`;
-    }
-
-    const authorText = $('#settingsAuthorText');
-    if (authorText) {
-      authorText.textContent = `Author: ${appMeta.author || '-'}`;
-    }
-
     const githubLink = $('#settingsGithubLink');
     if (githubLink) {
-      const href = appMeta.github || '';
-      githubLink.textContent = href ? 'GitHub' : 'GitHub: N/A';
-      githubLink.href = href || '#';
-      githubLink.style.pointerEvents = href ? '' : 'none';
-      githubLink.style.opacity = href ? '' : '0.5';
+      const href = appMeta.github || 'https://github.com/lanbinleo/utools-google-2fa';
+      githubLink.href = href;
     }
   }
 
@@ -2915,15 +2902,19 @@
         e.target.value = '';
       }
     });
-    $('#settingsGithubLink')?.addEventListener('click', (e) => {
-      const url = appMeta.github || '';
-      if (!url) {
-        e.preventDefault();
+    $('#settingsGithubLink')?.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const link = e.currentTarget;
+      const url = link && link.href ? String(link.href).trim() : '';
+      if (!url || url === '#') {
+        showToast('链接不可用', 'error');
         return;
       }
-      if (window.utoolsBridge && window.utoolsBridge.openExternal) {
-        e.preventDefault();
-        window.utoolsBridge.openExternal(url);
+      try {
+        await writeClipboardTextSimple(url);
+        showToast('GitHub 链接已复制', 'success');
+      } catch (_) {
+        showToast('复制链接失败', 'error');
       }
     });
 

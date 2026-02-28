@@ -636,14 +636,17 @@ html, body {
 
 .migration-layout,
 .migration-preview-list,
-.migration-export-output {
+.migration-export-output,
+.migration-textarea {
+  background: var(--bg);
   scrollbar-width: thin;
   scrollbar-color: var(--border) var(--bg);
 }
 
 .migration-layout::-webkit-scrollbar,
 .migration-preview-list::-webkit-scrollbar,
-.migration-export-output::-webkit-scrollbar {
+.migration-export-output::-webkit-scrollbar,
+.migration-textarea::-webkit-scrollbar {
   width: 10px;
   height: 10px;
   background-color: var(--bg);
@@ -651,16 +654,48 @@ html, body {
 
 .migration-layout::-webkit-scrollbar-track,
 .migration-preview-list::-webkit-scrollbar-track,
-.migration-export-output::-webkit-scrollbar-track {
+.migration-export-output::-webkit-scrollbar-track,
+.migration-textarea::-webkit-scrollbar-track {
+  background-color: var(--bg);
+}
+
+.migration-layout::-webkit-scrollbar-track-piece,
+.migration-preview-list::-webkit-scrollbar-track-piece,
+.migration-export-output::-webkit-scrollbar-track-piece,
+.migration-textarea::-webkit-scrollbar-track-piece {
+  background-color: var(--bg);
+}
+
+.migration-layout::-webkit-scrollbar-corner,
+.migration-preview-list::-webkit-scrollbar-corner,
+.migration-export-output::-webkit-scrollbar-corner,
+.migration-textarea::-webkit-scrollbar-corner {
+  background-color: var(--bg);
+}
+
+.migration-layout::-webkit-scrollbar-button,
+.migration-preview-list::-webkit-scrollbar-button,
+.migration-export-output::-webkit-scrollbar-button,
+.migration-textarea::-webkit-scrollbar-button {
+  width: 0;
+  height: 0;
   background-color: var(--bg);
 }
 
 .migration-layout::-webkit-scrollbar-thumb,
 .migration-preview-list::-webkit-scrollbar-thumb,
-.migration-export-output::-webkit-scrollbar-thumb {
+.migration-export-output::-webkit-scrollbar-thumb,
+.migration-textarea::-webkit-scrollbar-thumb {
   background: var(--border);
   border-radius: 999px;
   border: 2px solid var(--bg);
+}
+
+.migration-layout::-webkit-scrollbar-thumb:hover,
+.migration-preview-list::-webkit-scrollbar-thumb:hover,
+.migration-export-output::-webkit-scrollbar-thumb:hover,
+.migration-textarea::-webkit-scrollbar-thumb:hover {
+  background: var(--border);
 }
 
 /* 设置页面 */
@@ -731,15 +766,15 @@ html, body {
 }
 
 .settings-footer {
-  margin-top: 14px;
-  padding-top: 10px;
-  border-top: 1px solid var(--border);
+  margin-top: 6px;
+  padding-top: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 10px;
   color: var(--text-muted);
   font-size: 12px;
+  text-align: center;
   flex-wrap: wrap;
 }
 
