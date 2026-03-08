@@ -45,12 +45,13 @@
 
 ## 数据存储
 
-当前数据保存在浏览器 `localStorage`：
+当前数据默认按以下策略存储：
 
-- 条目：`google2fa_entries`
-- 主题：`google2fa_theme`
+- 条目主存储：uTools `dbCryptoStorage`
+- 主题主存储：uTools `dbStorage`
+- 本地恢复镜像：`localStorage['google2fa_entries']` 与 `localStorage['google2fa_entries_backup_v2']`
 
-注意：当前为本地明文存储，适合个人本机使用场景。
+说明：插件会保留一份本地镜像用于异常恢复，降低条目意外清空的风险。
 
 ## 调试
 

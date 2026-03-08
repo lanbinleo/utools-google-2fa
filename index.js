@@ -631,9 +631,17 @@
     });
 
     if (!chunks.length) return '';
+
+    // Add migration payload metadata to align with mainstream exporters.
+    // version=2, batch_size=1, batch_index=0 for single-batch exports.
+    chunks.push(encodeVarintField(2, 2));
+    chunks.push(encodeVarintField(3, 1));
+    chunks.push(encodeVarintField(4, 0));
+
     const payload = concatBytes(chunks);
     const data = bytesToBase64(payload);
-    return `otpauth-migration://offline?data=${encodeURIComponent(data)}`;
+    // Keep raw base64 in `data=` to match common otpauth-migration outputs.
+    return `otpauth-migration://offline?data=${data}`;
   }
 
   function buildSpecialBackupText() {
@@ -641,7 +649,7 @@
       schema: 'google2fa-backup-v1',
       exportedAt: new Date().toISOString(),
       version: appMeta.version || '-',
-      theme: localStorage.getItem(THEME_KEY) || 'light',
+      theme: getStoredTheme() || 'light',
       entries
     };
     const jsonBytes = utf8ToBytes(JSON.stringify(backupPayload));
@@ -763,6 +771,14 @@
       return;
     }
 
+    const exportConfirmed = await showAppConfirm({
+      title: '确认导出',
+      message: '导出文件会包含完整验证码密钥，请确认当前设备和保存位置安全。是否继续？',
+      confirmText: '继续导出',
+      confirmVariant: 'primary'
+    });
+    if (!exportConfirmed) return;
+
     const timestamp = getExportTimestamp();
     if (format === 'migration') {
       const migrationUrl = buildMigrationUrlFromEntries(entries);
@@ -834,8 +850,7 @@
     entries = nextEntries;
     saveEntries(entries);
 
-    const theme = payload.theme === 'dark' ? 'dark' : 'light';
-    localStorage.setItem(THEME_KEY, theme);
+    const theme = setStoredTheme(payload.theme);
     document.body.dataset.theme = theme;
 
     activeFilterTags = [];
@@ -849,8 +864,11 @@
   // ==================== 数据存储 ====================
 
   const STORAGE_KEY = 'google2fa_entries';
+  const STORAGE_BACKUP_KEY = 'google2fa_entries_backup_v2';
+  const STORAGE_PAYLOAD_SCHEMA = 'google2fa-entries-v2';
   const THEME_KEY = 'google2fa_theme';
   const BACKUP_MAGIC = 'G2FA_BACKUP_V1';
+  let pendingStorageNotice = '';
 
   function normalizeTags(tags) {
     if (!Array.isArray(tags)) return [];
@@ -877,17 +895,193 @@
     };
   }
 
-  function getEntries() {
+  function safeJsonParse(rawValue) {
+    if (rawValue == null || rawValue === '') return null;
+    if (typeof rawValue === 'string') {
+      try {
+        return JSON.parse(rawValue);
+      } catch (_) {
+        return null;
+      }
+    }
+    return rawValue;
+  }
+
+  function getCryptoStorageApi() {
+    return window.utools && window.utools.dbCryptoStorage ? window.utools.dbCryptoStorage : null;
+  }
+
+  function getDbStorageApi() {
+    return window.utools && window.utools.dbStorage ? window.utools.dbStorage : null;
+  }
+
+  function getLocalStorageText(key) {
     try {
-      const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
-      return parsed.map(normalizeEntry).filter(Boolean);
-    } catch (e) {
-      return [];
+      return localStorage.getItem(key);
+    } catch (_) {
+      return null;
     }
   }
 
-  function saveEntries(entries) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(entries));
+  function setLocalStorageText(key, value) {
+    try {
+      localStorage.setItem(key, value);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function getStorageItem(api, key) {
+    try {
+      if (api && typeof api.getItem === 'function') {
+        return api.getItem(key);
+      }
+    } catch (_) {
+      return null;
+    }
+    return null;
+  }
+
+  function setStorageItem(api, key, value) {
+    try {
+      if (api && typeof api.setItem === 'function') {
+        api.setItem(key, value);
+        return true;
+      }
+    } catch (_) {
+      return false;
+    }
+    return false;
+  }
+
+  function getStoredTheme() {
+    const dbValue = getStorageItem(getDbStorageApi(), THEME_KEY);
+    if (dbValue === 'dark' || dbValue === 'light') {
+      setLocalStorageText(THEME_KEY, dbValue);
+      return dbValue;
+    }
+
+    const localValue = getLocalStorageText(THEME_KEY);
+    if (localValue === 'dark' || localValue === 'light') {
+      setStorageItem(getDbStorageApi(), THEME_KEY, localValue);
+      return localValue;
+    }
+
+    return '';
+  }
+
+  function setStoredTheme(theme) {
+    const safeTheme = theme === 'dark' ? 'dark' : 'light';
+    setStorageItem(getDbStorageApi(), THEME_KEY, safeTheme);
+    setLocalStorageText(THEME_KEY, safeTheme);
+    return safeTheme;
+  }
+
+  function buildEntriesStoragePayload(sourceEntries, updatedAt = '') {
+    return {
+      schema: STORAGE_PAYLOAD_SCHEMA,
+      updatedAt: updatedAt || new Date().toISOString(),
+      entries: sourceEntries.map(normalizeEntry).filter(Boolean)
+    };
+  }
+
+  function parseEntriesStoragePayload(rawValue) {
+    const parsedValue = safeJsonParse(rawValue);
+    if (Array.isArray(parsedValue)) {
+      return {
+        schema: 'legacy-array',
+        updatedAt: '',
+        entries: parsedValue
+      };
+    }
+
+    if (!parsedValue || typeof parsedValue !== 'object' || !Array.isArray(parsedValue.entries)) {
+      return null;
+    }
+
+    return {
+      schema: parsedValue.schema || '',
+      updatedAt: parsedValue.updatedAt || '',
+      entries: parsedValue.entries
+    };
+  }
+
+  function readEntriesCandidate(source, rawValue) {
+    const payload = parseEntriesStoragePayload(rawValue);
+    if (!payload) {
+      return {
+        source,
+        updatedAtIso: '',
+        updatedAt: 0,
+        entries: [],
+        hasPayload: false
+      };
+    }
+
+    const updatedAt = payload.updatedAt ? new Date(payload.updatedAt).getTime() : 0;
+    return {
+      source,
+      updatedAtIso: payload.updatedAt || '',
+      updatedAt: Number.isFinite(updatedAt) ? updatedAt : 0,
+      entries: payload.entries.map(normalizeEntry).filter(Boolean),
+      hasPayload: true
+    };
+  }
+
+  function mirrorEntriesToLocal(payload) {
+    setLocalStorageText(STORAGE_KEY, JSON.stringify(payload.entries));
+    setLocalStorageText(STORAGE_BACKUP_KEY, JSON.stringify(payload));
+  }
+
+  function persistEntriesPayload(payload) {
+    const cryptoStorage = getCryptoStorageApi();
+    setStorageItem(cryptoStorage, STORAGE_KEY, payload);
+    mirrorEntriesToLocal(payload);
+  }
+
+  function consumePendingStorageNotice() {
+    const notice = pendingStorageNotice;
+    pendingStorageNotice = '';
+    return notice;
+  }
+
+  function getEntries() {
+    const cryptoCandidate = readEntriesCandidate('dbCrypto', getStorageItem(getCryptoStorageApi(), STORAGE_KEY));
+    const backupCandidate = readEntriesCandidate('localBackup', getLocalStorageText(STORAGE_BACKUP_KEY));
+    const legacyCandidate = readEntriesCandidate('localLegacy', getLocalStorageText(STORAGE_KEY));
+
+    const payloadCandidates = [cryptoCandidate, backupCandidate, legacyCandidate].filter(candidate => candidate.hasPayload);
+    if (!payloadCandidates.length) {
+      return [];
+    }
+
+    const nonEmptyCandidates = payloadCandidates.filter(candidate => candidate.entries.length > 0);
+    const selectedPool = nonEmptyCandidates.length ? nonEmptyCandidates : payloadCandidates;
+    selectedPool.sort((a, b) => b.updatedAt - a.updatedAt);
+    const selected = selectedPool[0];
+
+    if (selected.entries.length > 0) {
+      const needsPrimaryRepair =
+        selected.source !== 'dbCrypto' ||
+        cryptoCandidate.entries.length === 0 ||
+        cryptoCandidate.updatedAt < selected.updatedAt;
+
+      if (needsPrimaryRepair) {
+        persistEntriesPayload(buildEntriesStoragePayload(selected.entries, selected.updatedAtIso));
+        if (selected.source !== 'dbCrypto') {
+          pendingStorageNotice = '已从本地备份恢复验证码数据。';
+        }
+      } else {
+        mirrorEntriesToLocal(buildEntriesStoragePayload(selected.entries, selected.updatedAtIso));
+      }
+    }
+
+    return selected.entries;
+  }
+
+  function saveEntries(nextEntries) {
+    persistEntriesPayload(buildEntriesStoragePayload(nextEntries));
   }
 
   // ==================== 状态 ====================
@@ -911,6 +1105,8 @@
   let migrationLastImportResult = null;
   let migrationExportText = '';
   let migrationExportQrDataUrl = '';
+  let clipboardHintParsed = null;
+  let utoolsLifecycleBound = false;
   let appMeta = {
     version: '-',
     author: '-',
@@ -1128,29 +1324,19 @@
 
       // 存储数据在 data 属性中
       const dataAttrs = `data-id="${entry.id}"
-        data-secret="${escapeHtml(entry.secret)}"
-        data-algorithm="${entry.algorithm || 'SHA1'}"
-        data-digits="${entry.digits || 6}"
-        data-type="${entry.type || 'totp'}"
-        data-period="${period}"
-        data-counter="${entry.counter || 0}"`;
+        data-period="${period}"`;
 
       return `
         <div class="code-card" ${dataAttrs}>
           <div class="code-card-header">
             <div class="code-info">
-              <div class="code-name">${escapeHtml(name)}</div>
-              ${issuer ? `<div class="code-issuer">${escapeHtml(issuer)}</div>` : ''}
+              <div class="code-name">${escapeHtml(issuer || name)}</div>
+              ${name && issuer ? `<div class="code-issuer">${escapeHtml(name)}</div>` : ''}
             </div>
             ${headerBadges}
           </div>
           <div class="code-value-row">
-            <div class="code-value" data-secret="${escapeHtml(entry.secret)}"
-                 data-algorithm="${entry.algorithm || 'SHA1'}"
-                 data-digits="${entry.digits || 6}"
-                 data-type="${entry.type || 'totp'}"
-                 data-period="${period}"
-                 data-counter="${entry.counter || 0}">------</div>
+            <div class="code-value" data-id="${entry.id}">------</div>
             <div class="timer-circle" data-period="${period}">
               <svg viewBox="0 0 44 44">
                 <circle class="circle-bg" cx="22" cy="22" r="19"/>
@@ -1576,6 +1762,14 @@
     }
 
     const strategy = $('#migrationConflictSelect')?.value || 'skip';
+    const confirmed = await showAppConfirm({
+      title: '确认导入',
+      message: `即将导入 ${migrationPreviewItems.length} 条数据，冲突策略为 ${strategy}。是否继续？`,
+      confirmText: '确认导入',
+      confirmVariant: 'primary'
+    });
+    if (!confirmed) return;
+
     const draft = [...entries];
     let importedCount = 0;
     let replacedCount = 0;
@@ -1670,21 +1864,26 @@
 
     for (const el of codeEls) {
       try {
-        const secret = el.dataset.secret;
+        const entryId = el.dataset.id || el.closest('.code-card')?.dataset.id || '';
+        const entry = entries.find(item => item.id === entryId);
+        if (!entry || !entry.secret) {
+          el.textContent = '------';
+          continue;
+        }
         const options = {
-          algorithm: el.dataset.algorithm || 'SHA1',
-          digits: parseInt(el.dataset.digits) || 6,
-          period: parseInt(el.dataset.period) || 30,
-          type: el.dataset.type || 'totp'
+          algorithm: entry.algorithm || 'SHA1',
+          digits: parseInt(entry.digits, 10) || 6,
+          period: parseInt(entry.period, 10) || 30,
+          type: entry.type || 'totp'
         };
 
         if (options.type === 'hotp') {
-          options.counter = parseInt(el.dataset.counter) || 0;
+          options.counter = parseInt(entry.counter, 10) || 0;
         }
 
         const code = options.type === 'hotp'
-          ? await generateHOTP(secret, options)
-          : await generateTOTP(secret, options);
+          ? await generateHOTP(entry.secret, options)
+          : await generateTOTP(entry.secret, options);
 
         // 格式化显示（每3位加空格）
         el.textContent = code.replace(/(\d{3})/g, '$1 ').trim();
@@ -1931,7 +2130,7 @@
     $('#deprecatedInput').checked = false;
     $('#deleteBtn').style.display = 'none';
     $('#clipboardHint').style.display = 'none';
-    delete $('#clipboardHint').dataset.parsed;
+    clipboardHintParsed = null;
     setSelectedTags([]);
     syncOtpTypeVisibility();
   }
@@ -1999,7 +2198,7 @@
   function toggleTheme() {
     const isDark = document.body.dataset.theme === 'dark';
     document.body.dataset.theme = isDark ? 'light' : 'dark';
-    localStorage.setItem(THEME_KEY, document.body.dataset.theme);
+    setStoredTheme(document.body.dataset.theme);
     if (currentView === 'settings') {
       renderSettingsView();
     }
@@ -2007,7 +2206,7 @@
 
   // 初始化主题
   function initTheme() {
-    const saved = localStorage.getItem(THEME_KEY);
+    const saved = getStoredTheme();
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     document.body.dataset.theme = saved || (prefersDark ? 'dark' : 'light');
   }
@@ -2265,6 +2464,38 @@
     renderHomeView();
   }
 
+  function reloadStateFromStorage(showRecoveryNotice = false) {
+    entries = getEntries();
+    initTheme();
+    renderCurrentView();
+    renderSettingsView();
+    if (currentView === 'home') {
+      refreshCodes();
+    }
+
+    const notice = consumePendingStorageNotice();
+    if (showRecoveryNotice && notice) {
+      showToast(notice, 'success');
+    }
+  }
+
+  function bindUtoolsLifecycleEvents() {
+    if (utoolsLifecycleBound || !window.utools) return;
+    utoolsLifecycleBound = true;
+
+    if (typeof window.utools.onPluginEnter === 'function') {
+      window.utools.onPluginEnter(() => {
+        reloadStateFromStorage(false);
+      });
+    }
+
+    if (typeof window.utools.onDbPull === 'function') {
+      window.utools.onDbPull(() => {
+        reloadStateFromStorage(true);
+      });
+    }
+  }
+
   async function readClipboardTextRaw(source = 'unknown') {
     try {
       logClipboardDebug('readClipboardTextRaw:start', {
@@ -2369,6 +2600,7 @@
 
     // 隐藏剪贴板提示
     $('#clipboardHint').style.display = 'none';
+    clipboardHintParsed = null;
     return true;
   }
 
@@ -2665,10 +2897,10 @@
       const sourceLabel = parsedSource === 'image' ? '二维码' : '验证码';
       hint.querySelector('span').textContent = '检测到剪贴板' + sourceLabel + '：' + (parsed.name || parsed.issuer || '点击导入');
       // 存储解析结果供导入使用
-      hint.dataset.parsed = JSON.stringify(parsed);
+      clipboardHintParsed = parsed;
     } else {
       hint.style.display = 'none';
-      delete hint.dataset.parsed;
+      clipboardHintParsed = null;
     }
 
     logClipboardDebug('checkClipboardAndShowHint:done', {
@@ -2682,8 +2914,8 @@
   async function applyClipboardImport() {
     const hint = $('#clipboardHint');
     try {
-      if (!hint.dataset.parsed) return;
-      const parsed = JSON.parse(hint.dataset.parsed);
+      if (!clipboardHintParsed) return;
+      const parsed = clipboardHintParsed;
       const success = applyParsedData(parsed);
       if (success) {
         showToast('已导入: ' + (parsed.name || parsed.issuer), 'success');
@@ -2814,6 +3046,7 @@
     // 初始化主题
     initTheme();
     loadAppMeta();
+    bindUtoolsLifecycleEvents();
 
     // 导航切换
     $$('.nav-btn').forEach(btn => {
@@ -3255,6 +3488,11 @@
     // 初始渲染
     switchView('home');
     initRefreshInterval();
+
+    const startupNotice = consumePendingStorageNotice();
+    if (startupNotice) {
+      showToast(startupNotice, 'success');
+    }
   }
 
   // 启动

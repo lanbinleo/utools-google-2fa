@@ -7,6 +7,41 @@ Notes:
 1. `alpha-*` sections are retrospective and grouped from commit history (no historical tags).
 2. `1.0.0` release point is fixed at `2026-02-27 10:50:15 UTC`.
 
+## 1.1.4
+
+Date: `2026-03-08`
+
+### Changed
+
+1. Packaging output now defaults to versioned subfolders under `dist/<version>/`.
+2. Existing distribution artifacts were reorganized into versioned release directories.
+
+### Fixed
+
+1. Repacked release artifacts with the updated versioned output layout for safer release retention.
+
+## 1.1.3
+
+Date: `2026-03-08`
+
+### Added
+
+1. Added uTools lifecycle refresh hooks to reload state on plugin re-enter and DB sync pull.
+2. Added local recovery mirror for entries to reduce accidental empty-state risk.
+
+### Changed
+
+1. Switched entry persistence to uTools `dbCryptoStorage`, while retaining local recovery snapshots.
+2. Switched theme persistence to uTools `dbStorage` with local fallback compatibility.
+3. Removed OTP secrets from home-view DOM attributes and kept clipboard preview state in memory only.
+4. Narrowed the preload bridge to runtime read allowlist and removed generic file-write exposure.
+5. Added explicit confirmation before migration apply and sensitive export actions.
+
+### Fixed
+
+1. Reduced the risk of entry loss after storage desync or empty primary state by repairing from the newest local snapshot.
+2. Improved state consistency after uTools sync events by reloading rendered data from storage.
+
 ## 1.1.2
 
 Date: `2026-02-27`

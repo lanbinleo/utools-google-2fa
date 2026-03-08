@@ -66,8 +66,9 @@ Entry fields currently used:
 
 Storage:
 
-- entries: `localStorage['google2fa_entries']`
-- theme: `localStorage['google2fa_theme']`
+- entries: uTools `dbCryptoStorage['google2fa_entries']`
+- theme: uTools `dbStorage['google2fa_theme']`
+- local recovery mirror: `localStorage['google2fa_entries']` + `localStorage['google2fa_entries_backup_v2']`
 
 ## 4. CSS Method
 

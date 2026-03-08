@@ -108,6 +108,11 @@ if ([string]::IsNullOrWhiteSpace($version)) {
   throw "VERSION file is empty: $versionPath"
 }
 
+if ($OutputDir -eq "dist") {
+  $OutputDir = Join-Path "dist" $version
+  $outputPath = Join-Path $projectRoot $OutputDir
+}
+
 if ([string]::IsNullOrWhiteSpace($Author)) {
   $Author = Get-GitConfigValue -Key "user.name"
 }

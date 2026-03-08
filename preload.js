@@ -1,7 +1,6 @@
-// uTools 插件预加载脚本
-// 提供与 Node.js 和 uTools 的桥接
-
 const CLIPBOARD_DEBUG_TAG = '[ClipboardDebug/preload]';
+const RUNTIME_READ_ALLOWLIST = new Set(['VERSION', 'plugin.json']);
+
 const CLIPBOARD_DEBUG_ENABLED = (() => {
   try {
     return localStorage.getItem('google2fa_debug_clipboard') === '1';
@@ -31,24 +30,21 @@ function maskClipboardPreview(text) {
   return masked;
 }
 
-// uTools 环境下使用 utools API，否则提供降级实现
+function normalizeRuntimeReadPath(filePath) {
+  if (typeof filePath !== 'string') return '';
+  const normalized = filePath.replace(/\\/g, '/').trim().replace(/^\.\//, '');
+  return RUNTIME_READ_ALLOWLIST.has(normalized) ? normalized : '';
+}
+
 window.utoolsBridge = {
-  // 读取文本
   readText(filePath) {
-    if (window.utools) {
-      return require('fs').readFileSync(filePath, 'utf8');
+    const safePath = normalizeRuntimeReadPath(filePath);
+    if (!safePath || !window.utools) {
+      return null;
     }
-    return null;
+    return require('fs').readFileSync(safePath, 'utf8');
   },
 
-  // 写入文本
-  writeText(filePath, content) {
-    if (window.utools) {
-      require('fs').writeFileSync(filePath, content, 'utf8');
-    }
-  },
-
-  // 剪贴板 - 读取文本
   getClipboardText() {
     try {
       const hasUtoolsClipboard = !!(window.utools && window.utools.clipboard);
@@ -67,7 +63,6 @@ window.utoolsBridge = {
         return text;
       }
 
-      // 浏览器环境降级
       const result = navigator.clipboard?.readText() || null;
       debugLog(CLIPBOARD_DEBUG_TAG, 'navigator.clipboard.readText result', {
         type: typeof result,
@@ -80,7 +75,6 @@ window.utoolsBridge = {
     }
   },
 
-  // 剪贴板调试快照
   async debugClipboardSnapshot() {
     const snapshot = {
       hasUtools: !!window.utools,
@@ -112,7 +106,6 @@ window.utoolsBridge = {
     return snapshot;
   },
 
-  // 剪贴板 - 写入文本
   setClipboardText(text) {
     if (window.utools && window.utools.clipboard) {
       window.utools.clipboard.writeText(text);
@@ -121,7 +114,6 @@ window.utoolsBridge = {
     }
   },
 
-  // 剪贴板 - 读取图片（返回 base64）
   getClipboardImage() {
     if (window.utools && window.utools.clipboard) {
       const img = window.utools.clipboard.readImage();
@@ -132,14 +124,17 @@ window.utoolsBridge = {
     return null;
   },
 
-  // 打开外部链接
   openExternal(url) {
-    if (window.utools && window.utools.shell) {
-      window.utools.shell.openExternal(url);
+    if (!window.utools || !window.utools.shell || typeof url !== 'string') {
+      return;
     }
+    const trimmed = url.trim();
+    if (!/^https?:\/\//i.test(trimmed)) {
+      return;
+    }
+    window.utools.shell.openExternal(trimmed);
   },
 
-  // 获取屏幕截图（用于二维码识别）
   getScreenCapture() {
     if (window.utools && window.utools.getScreenCapture) {
       return window.utools.getScreenCapture();
